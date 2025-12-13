@@ -184,7 +184,18 @@ export const useCampaignWizardController = () => {
 
   // Get contacts for sending - test contact or selected contacts (includes email and custom_fields for variable resolution)
   const contactsForSending = recipientSource === 'test' && testContact
-    ? [{ id: (testContact as any).id || 'manual_test_id', contactId: (testContact as any).id || 'manual_test_id', name: testContact.name || testContact.phone, phone: testContact.phone, email: (testContact as any).email || '', custom_fields: (testContact as any).custom_fields || {} }]
+    ? (() => {
+      const testId = (testContact as any).id as string | undefined;
+      return [
+        {
+          ...(testId ? { id: testId, contactId: testId } : {}),
+          name: testContact.name || testContact.phone,
+          phone: testContact.phone,
+          email: (testContact as any).email || '',
+          custom_fields: (testContact as any).custom_fields || {},
+        },
+      ];
+    })()
     : selectedContacts.map(c => ({ id: c.id, contactId: c.id, name: c.name || c.phone, phone: c.phone, email: c.email || '', custom_fields: c.custom_fields || {} }));
 
   const availableTemplates = templatesQuery.data || [];

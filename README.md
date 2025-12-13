@@ -9,6 +9,12 @@
 
 CRM + automação de campanhas no WhatsApp (Cloud API), com fila/workflows (Upstash QStash) e geração de conteúdo via IA.
 
+<p align="center">
+   <a href="docs/GUIA_DE_INSTALACAO.md">
+      <img alt="Guia de Instalação" src="https://img.shields.io/badge/GUIA%20DE%20INSTALA%C3%87%C3%83O-CLIQUE%20AQUI-22c55e?style=for-the-badge" />
+   </a>
+</p>
+
 </div>
 
 ---

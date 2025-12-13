@@ -1,3 +1,13 @@
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/dialog';
+import { Input } from '@/components/ui/input';
+import { Button } from '@/components/ui/button';
 import React, { useState, useEffect, useMemo, useRef } from 'react';
 import {
   DropdownMenu,
@@ -674,6 +684,25 @@ export const CampaignWizardView: React.FC<CampaignWizardViewProps> = ({
     setBatchFixIndex(0);
     setQuickEditContactId(batchFixCandidates[0].contactId);
     setQuickEditFocusSafe(batchFixCandidates[0].focus);
+  };
+
+  const [fixedValueDialogOpen, setFixedValueDialogOpen] = useState(false);
+  const [fixedValueDialogSlot, setFixedValueDialogSlot] = useState<{ where: 'header' | 'body' | 'button'; key: string; buttonIndex?: number } | null>(null);
+  const [fixedValueDialogTitle, setFixedValueDialogTitle] = useState<string>('');
+  const [fixedValueDialogValue, setFixedValueDialogValue] = useState<string>('');
+
+  const openFixedValueDialog = (slot: { where: 'header' | 'body' | 'button'; key: string; buttonIndex?: number }) => {
+    const k = String(slot.key || '').toLowerCase();
+    const suggested = k.includes('email')
+      ? 'teste@exemplo.com'
+      : k.includes('empresa')
+        ? 'Empresa Teste'
+        : '';
+
+    setFixedValueDialogSlot(slot);
+    setFixedValueDialogTitle(`Valor fixo (teste) • ${formatVarKeyForHumans(String(slot.key))}`);
+    setFixedValueDialogValue(suggested);
+    setFixedValueDialogOpen(true);
   };
 
   const applyQuickFill = (slot: { where: 'header' | 'body' | 'button'; key: string; buttonIndex?: number }, value: string) => {
@@ -1730,16 +1759,7 @@ export const CampaignWizardView: React.FC<CampaignWizardViewProps> = ({
                                         <DropdownMenuItem
                                           className="text-sm cursor-pointer hover:bg-zinc-800 focus:bg-zinc-800 px-2 py-1.5 rounded-sm flex items-center gap-2 outline-none"
                                           onClick={() => {
-                                            const k = String(m.key || '').toLowerCase();
-                                            const suggested = k.includes('email')
-                                              ? 'teste@exemplo.com'
-                                              : k.includes('empresa')
-                                                ? 'Empresa Teste'
-                                                : '';
-                                            const raw = window.prompt('Digite um valor fixo para esta variável:', suggested);
-                                            const v = (raw ?? '').trim();
-                                            if (!v) return;
-                                            applyQuickFill({ where: m.where, key: m.key, buttonIndex: m.buttonIndex }, v);
+                                            openFixedValueDialog({ where: m.where, key: m.key, buttonIndex: m.buttonIndex });
                                           }}
                                         >
                                           <div className="text-gray-300 font-mono text-[10px] w-3.5 text-center">T</div>
@@ -1904,6 +1924,70 @@ export const CampaignWizardView: React.FC<CampaignWizardViewProps> = ({
                     ? `Corrigir contato (${Math.min(batchFixIndex + 1, batchFixQueue.length)} de ${batchFixQueue.length})`
                     : 'Corrigir contato'}
                 />
+
+                <Dialog
+                  open={fixedValueDialogOpen}
+                  onOpenChange={(open) => {
+                    setFixedValueDialogOpen(open);
+                    if (!open) {
+                      setFixedValueDialogSlot(null);
+                      setFixedValueDialogTitle('');
+                      setFixedValueDialogValue('');
+                    }
+                  }}
+                >
+                  <DialogContent className="sm:max-w-md bg-zinc-950 border border-white/10 text-white">
+                    <DialogHeader>
+                      <DialogTitle className="text-white">{fixedValueDialogTitle || 'Valor fixo (teste)'}</DialogTitle>
+                      <DialogDescription className="text-gray-400">
+                        Use isso só para testes rápidos. Esse valor vai apenas nesta campanha (não altera o contato).
+                      </DialogDescription>
+                    </DialogHeader>
+
+                    <div className="space-y-2">
+                      <label className="text-xs font-medium text-gray-400">Digite o valor</label>
+                      <Input
+                        value={fixedValueDialogValue}
+                        onChange={(e) => setFixedValueDialogValue(e.target.value)}
+                        placeholder="Ex: Empresa Teste"
+                        className="bg-zinc-900 border-white/10 text-white placeholder:text-gray-600"
+                        autoFocus
+                        onKeyDown={(e) => {
+                          if (e.key === 'Enter') {
+                            const v = fixedValueDialogValue.trim();
+                            if (!v || !fixedValueDialogSlot) return;
+                            applyQuickFill(fixedValueDialogSlot, v);
+                            setFixedValueDialogOpen(false);
+                          }
+                        }}
+                      />
+                    </div>
+
+                    <DialogFooter className="gap-2">
+                      <Button
+                        type="button"
+                        variant="secondary"
+                        onClick={() => setFixedValueDialogOpen(false)}
+                        className="bg-zinc-800 text-white hover:bg-zinc-700"
+                      >
+                        Cancelar
+                      </Button>
+                      <Button
+                        type="button"
+                        onClick={() => {
+                          const v = fixedValueDialogValue.trim();
+                          if (!v || !fixedValueDialogSlot) return;
+                          applyQuickFill(fixedValueDialogSlot, v);
+                          setFixedValueDialogOpen(false);
+                        }}
+                        className="bg-white text-black hover:bg-gray-200 font-bold"
+                        disabled={!fixedValueDialogValue.trim() || !fixedValueDialogSlot}
+                      >
+                        Aplicar
+                      </Button>
+                    </DialogFooter>
+                  </DialogContent>
+                </Dialog>
 
                 {/* Scheduling Options */}
                 <div className="border-t border-white/5 pt-6 space-y-4">
