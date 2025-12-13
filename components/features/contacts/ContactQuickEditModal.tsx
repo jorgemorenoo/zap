@@ -8,6 +8,7 @@ import { toast } from 'sonner';
 import type { Contact, CustomFieldDefinition } from '@/types';
 import { contactService } from '@/services';
 import { customFieldService } from '@/services/customFieldService';
+import type { ContactFixFocus, ContactFixTarget } from '@/lib/precheck-humanizer';
 
 type ContactsCache = { list: Contact[]; byId: Record<string, Contact> };
 
@@ -62,16 +63,11 @@ const patchContactsQueryData = (current: ContactsQueryData, id: string, data: Co
   return current;
 };
 
-type FocusTarget =
-  | { type: 'email' }
-  | { type: 'custom_field'; key: string }
-  | null;
-
 interface ContactQuickEditModalProps {
   isOpen: boolean;
   contactId: string | null;
   onClose: () => void;
-  focus?: FocusTarget;
+  focus?: ContactFixFocus;
   title?: string;
   onSaved?: () => void;
   mode?: 'full' | 'focused';
@@ -88,7 +84,7 @@ export const ContactQuickEditModal: React.FC<ContactQuickEditModalProps> = ({
 }) => {
   const queryClient = useQueryClient();
   const emailRef = useRef<HTMLInputElement | null>(null);
-  const customRef = useRef<HTMLInputElement | null>(null);
+  const customRefs = useRef<Record<string, HTMLInputElement | null>>({});
 
   const contactQuery = useQuery({
     queryKey: ['contact', contactId],
@@ -108,11 +104,23 @@ export const ContactQuickEditModal: React.FC<ContactQuickEditModalProps> = ({
 
   const customFields = (customFieldsQuery.data || []) as CustomFieldDefinition[];
 
+  const focusTargets = useMemo<ContactFixTarget[]>(() => {
+    if (!focus) return [];
+    if ((focus as any).type === 'multi') {
+      return Array.isArray((focus as any).targets) ? ((focus as any).targets as ContactFixTarget[]) : [];
+    }
+    return [focus as ContactFixTarget];
+  }, [focus]);
+
   // Quando em modo "focused" e temos um foco explícito,
   // mostramos apenas o Nome + o campo que precisa de correção.
-  const isFocusedMode = mode === 'focused' && !!focus;
-  const shouldShowEmail = !isFocusedMode || focus?.type === 'email';
-  const shouldShowFocusedCustomField = isFocusedMode && focus?.type === 'custom_field';
+  const isFocusedMode = mode === 'focused' && focusTargets.length > 0;
+  const shouldShowEmail = !isFocusedMode || focusTargets.some((t) => t.type === 'email');
+  const focusedCustomFieldKeys = useMemo(() => {
+    const keys = focusTargets.filter((t) => t.type === 'custom_field').map((t) => (t as any).key as string);
+    return Array.from(new Set(keys)).filter(Boolean);
+  }, [focusTargets]);
+  const shouldShowFocusedCustomFields = isFocusedMode && focusedCustomFieldKeys.length > 0;
   const shouldShowAllCustomFields = !isFocusedMode;
 
   const [form, setForm] = useState<{ name: string; email: string; custom_fields: Record<string, any> }>({
@@ -134,27 +142,39 @@ export const ContactQuickEditModal: React.FC<ContactQuickEditModalProps> = ({
   }, [isOpen, contactQuery.data]);
 
   const focusLabel = useMemo(() => {
-    if (!focus) return null;
-    if (focus.type === 'email') return 'Email';
-    const field = customFields.find(f => f.key === focus.key);
-    return field?.label || focus.key;
-  }, [focus, customFields]);
+    if (focusTargets.length === 0) return null;
+    const labels = focusTargets.map((t) => {
+      if (t.type === 'email') return 'Email';
+      const key = (t as any).key as string;
+      const field = customFields.find((f) => f.key === key);
+      return field?.label || key;
+    });
+    const uniq = Array.from(new Set(labels)).filter(Boolean);
+    if (uniq.length === 1) return uniq[0];
+    return uniq.join(', ');
+  }, [focusTargets, customFields]);
 
   useEffect(() => {
     if (!isOpen) return;
     // Pequeno delay para garantir que o input montou
     const t = setTimeout(() => {
-      if (focus?.type === 'email') {
+      const first = focusTargets[0];
+      if (!first) return;
+
+      if (first.type === 'email') {
         emailRef.current?.focus();
         emailRef.current?.select();
+        return;
       }
-      if (focus?.type === 'custom_field') {
-        customRef.current?.focus();
-        customRef.current?.select();
-      }
+
+      const key = (first as any).key as string;
+      if (!key) return;
+      const el = customRefs.current[key];
+      el?.focus();
+      el?.select?.();
     }, 50);
     return () => clearTimeout(t);
-  }, [isOpen, focus]);
+  }, [isOpen, focusTargets]);
 
   const updateMutation = useMutation({
     mutationFn: async (payload: { id: string; data: ContactUpdatePayload }) => {
@@ -250,21 +270,56 @@ export const ContactQuickEditModal: React.FC<ContactQuickEditModalProps> = ({
               </div>
             )}
 
-            {shouldShowFocusedCustomField && (
-              <div>
-                <label className="block text-sm text-gray-400 mb-1">{focusLabel}</label>
-                <input
-                  ref={customRef}
-                  className="w-full bg-zinc-900 border border-white/10 rounded-lg px-4 py-3 text-white focus:border-primary-500 outline-none transition-colors"
-                  value={String(form.custom_fields?.[focus.key] ?? '')}
-                  onChange={(e) =>
-                    setForm(prev => ({
-                      ...prev,
-                      custom_fields: { ...(prev.custom_fields || {}), [focus.key]: e.target.value },
-                    }))
+            {shouldShowFocusedCustomFields && (
+              <div className="space-y-3">
+                {focusedCustomFieldKeys.map((key) => {
+                  const field = customFields.find((f) => f.key === key);
+                  const label = field?.label || key;
+                  const type = field?.type;
+
+                  // Se for select, usa select. Caso contrário, input.
+                  if (type === 'select' && field?.options && field.options.length > 0) {
+                    return (
+                      <div key={key}>
+                        <label className="block text-sm text-gray-400 mb-1">{label}</label>
+                        <select
+                          className="w-full bg-zinc-900 border border-white/10 rounded-lg px-4 py-3 text-white focus:border-primary-500 outline-none transition-colors"
+                          value={String(form.custom_fields?.[key] ?? '')}
+                          onChange={(e) =>
+                            setForm((prev) => ({
+                              ...prev,
+                              custom_fields: { ...(prev.custom_fields || {}), [key]: e.target.value },
+                            }))
+                          }
+                        >
+                          <option value="">Selecionar...</option>
+                          {field.options.map((opt) => (
+                            <option key={opt} value={opt}>{opt}</option>
+                          ))}
+                        </select>
+                      </div>
+                    );
                   }
-                  placeholder={`Digite ${focusLabel}...`}
-                />
+
+                  return (
+                    <div key={key}>
+                      <label className="block text-sm text-gray-400 mb-1">{label}</label>
+                      <input
+                        ref={(el) => { customRefs.current[key] = el; }}
+                        type={type === 'number' ? 'number' : type === 'date' ? 'date' : 'text'}
+                        className="w-full bg-zinc-900 border border-white/10 rounded-lg px-4 py-3 text-white focus:border-primary-500 outline-none transition-colors"
+                        value={String(form.custom_fields?.[key] ?? '')}
+                        onChange={(e) =>
+                          setForm((prev) => ({
+                            ...prev,
+                            custom_fields: { ...(prev.custom_fields || {}), [key]: e.target.value },
+                          }))
+                        }
+                        placeholder={type === 'date' ? '' : `Digite ${label}...`}
+                      />
+                    </div>
+                  );
+                })}
               </div>
             )}
 

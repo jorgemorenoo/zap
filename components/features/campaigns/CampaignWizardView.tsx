@@ -453,9 +453,13 @@ export const CampaignWizardView: React.FC<CampaignWizardViewProps> = ({
   isOverLimit = false,
   currentLimit = 250
 }) => {
-  type QuickEditFocus =
+  type QuickEditTarget =
     | { type: 'email' }
-    | { type: 'custom_field'; key: string }
+    | { type: 'custom_field'; key: string };
+
+  type QuickEditFocus =
+    | QuickEditTarget
+    | { type: 'multi'; targets: QuickEditTarget[] }
     | null;
 
   // State for upgrade modal
@@ -633,19 +637,24 @@ export const CampaignWizardView: React.FC<CampaignWizardViewProps> = ({
 
       const missing = (r.missing as MissingParamDetail[] | undefined) || [];
 
-      let focus: QuickEditFocus = null;
+      const targets: QuickEditTarget[] = [];
       for (const m of missing) {
         const inferred = humanizeVarSource(String(m.raw || '<vazio>'), customFieldLabelByKey);
-        const f = (inferred.focus || null) as any;
-        if (f) {
-          focus = f;
-          break;
-        }
+        const f = inferred.focus || null;
+        if (f) targets.push(f as any);
       }
+
+      const dedupedTargets = Array.from(
+        new Map(targets.map((t) => [t.type === 'email' ? 'email' : `custom_field:${(t as any).key}`, t])).values()
+      );
+
+      let focus: QuickEditFocus = null;
+      if (dedupedTargets.length === 1) focus = dedupedTargets[0];
+      if (dedupedTargets.length > 1) focus = { type: 'multi', targets: dedupedTargets };
 
       if (!focus) {
         const h = humanizePrecheckReason(String(r.reason || ''), { customFieldLabelByKey });
-        focus = (h.focus as any) || null;
+        focus = h.focus || null;
       }
 
       if (!focus) continue;
@@ -1793,7 +1802,7 @@ export const CampaignWizardView: React.FC<CampaignWizardViewProps> = ({
 
                                               const h = humanizePrecheckReason(String(r.reason || r.skipCode || ''), { customFieldLabelByKey });
                                               setQuickEditContactId(r.contactId);
-                                              setQuickEditFocusSafe((h.focus as any) || null);
+                                              setQuickEditFocusSafe(h.focus || null);
                                             }}
                                             className="text-primary-400 hover:text-primary-300 underline underline-offset-2"
                                           >
