@@ -35,12 +35,13 @@ interface CampaignWorkflowInput {
 
 async function claimPendingForSend(
   campaignId: string,
-  identifiers: { contactId: string; phone: string }
+  identifiers: { contactId: string; phone: string },
+  traceId?: string
 ): Promise<boolean> {
   const now = new Date().toISOString()
   const query = supabase
     .from('campaign_contacts')
-    .update({ status: 'sending', sending_at: now })
+    .update({ status: 'sending', sending_at: now, trace_id: traceId || null })
     .eq('campaign_id', campaignId)
     .eq('status', 'pending')
     .eq('contact_id', identifiers.contactId)
@@ -80,12 +81,17 @@ async function updateContactStatus(
   campaignId: string,
   identifiers: { contactId: string; phone: string },
   status: 'sent' | 'failed' | 'skipped',
-  opts?: { messageId?: string; error?: string; skipCode?: string; skipReason?: string }
+  opts?: { messageId?: string; error?: string; skipCode?: string; skipReason?: string; traceId?: string }
 ) {
   try {
     const now = new Date().toISOString()
     const update: any = {
       status,
+    }
+
+    // Correlation id for tracing across dispatch/workflow/webhook
+    if (opts?.traceId) {
+      update.trace_id = opts.traceId
     }
 
     if (status === 'sent') {
@@ -241,6 +247,7 @@ export const { POST } = serve<CampaignWorkflowInput>(
               await updateContactStatus(campaignId, { contactId: contact.contactId as string, phone: contact.phone }, 'skipped', {
                 skipCode: precheck.skipCode,
                 skipReason: precheck.reason,
+                traceId,
               })
               dbTimeMs += Date.now() - t0
 
@@ -264,7 +271,7 @@ export const { POST } = serve<CampaignWorkflowInput>(
             const claimed = await timePhase(
               'db_claim_pending',
               { traceId, campaignId, step, batchIndex, contactId: contact.contactId, phoneMasked },
-              async () => claimPendingForSend(campaignId, { contactId: contact.contactId as string, phone: contact.phone })
+              async () => claimPendingForSend(campaignId, { contactId: contact.contactId as string, phone: contact.phone }, traceId)
             )
             if (!claimed) {
               console.log(`↩️ Idempotência: ${contact.phone} não estava pending (ou já claimado), pulando envio.`)
@@ -306,7 +313,7 @@ export const { POST } = serve<CampaignWorkflowInput>(
               // Update contact status in Supabase (stores message_id for webhook lookup)
               {
                 const t0 = Date.now()
-                await updateContactStatus(campaignId, { contactId: contact.contactId as string, phone: contact.phone }, 'sent', { messageId })
+                await updateContactStatus(campaignId, { contactId: contact.contactId as string, phone: contact.phone }, 'sent', { messageId, traceId })
                 dbTimeMs += Date.now() - t0
               }
 
@@ -354,7 +361,7 @@ export const { POST } = serve<CampaignWorkflowInput>(
               // Update contact status in Supabase
               {
                 const t0 = Date.now()
-                await updateContactStatus(campaignId, { contactId: contact.contactId as string, phone: contact.phone }, 'failed', { error: errorWithCode })
+                await updateContactStatus(campaignId, { contactId: contact.contactId as string, phone: contact.phone }, 'failed', { error: errorWithCode, traceId })
                 dbTimeMs += Date.now() - t0
               }
 
@@ -385,7 +392,7 @@ export const { POST } = serve<CampaignWorkflowInput>(
 
             {
               const t0 = Date.now()
-              await updateContactStatus(campaignId, { contactId: contact.contactId as string, phone: contact.phone }, 'failed', { error: errorMsg })
+              await updateContactStatus(campaignId, { contactId: contact.contactId as string, phone: contact.phone }, 'failed', { error: errorMsg, traceId })
               dbTimeMs += Date.now() - t0
             }
             failedCount++

@@ -10,6 +10,8 @@ import {
   getErrorCategory
 } from '@/lib/whatsapp-errors'
 
+import { emitWorkflowTrace, maskPhone } from '@/lib/workflow-trace'
+
 
 import { getWhatsAppCredentials } from '@/lib/whatsapp-credentials'
 
@@ -72,19 +74,15 @@ export async function POST(request: NextRequest) {
             errors
           } = statusUpdate
 
-          // Deduplicate: Check if we already processed this exact status update
-          // Using Supabase instead of Redis for simplicity
+          // Lookup single row once (dedupe + context)
           const { data: existingUpdate } = await supabase
             .from('campaign_contacts')
-            .select('id, status')
+            .select('id, status, campaign_id, phone, trace_id')
             .eq('message_id', messageId)
             .single()
 
-          // Skip if message not found (not from a campaign) or already has this/later status
-          if (!existingUpdate) {
-            // Message not from a campaign, skip
-            continue
-          }
+          // Message not from a campaign, skip
+          if (!existingUpdate) continue
 
           // Status progression: pending → sent → delivered → read
           // Only update if new status is "later" in progression
@@ -97,29 +95,36 @@ export async function POST(request: NextRequest) {
             continue
           }
 
-          // Get campaign info from the contact record
-          const { data: contactInfo } = await supabase
-            .from('campaign_contacts')
-            .select('campaign_id, phone')
-            .eq('message_id', messageId)
-            .single()
+          const campaignId = existingUpdate.campaign_id
+          const phone = existingUpdate.phone
+          const traceId = (existingUpdate as any).trace_id as string | null
+          const phoneMasked = maskPhone(phone)
 
-          if (!contactInfo) {
-            continue
+          // Emit structured event (easy to filter by traceId)
+          if (traceId) {
+            await emitWorkflowTrace({
+              traceId,
+              campaignId,
+              step: 'webhook',
+              phase: `webhook_${msgStatus}`,
+              ok: msgStatus !== 'failed',
+              phoneMasked,
+              extra: {
+                messageId,
+                previousStatus: existingUpdate.status,
+              },
+            })
           }
-
-          const campaignId = contactInfo.campaign_id
-          const phone = contactInfo.phone
 
           // Atualiza o banco (Supabase) — fonte da verdade
           switch (msgStatus) {
             case 'sent':
-              console.log(`📤 Sent confirmed: ${phone} (campaign: ${campaignId})`)
+              console.log(`📤 Sent confirmed: ${phoneMasked || phone} (campaign: ${campaignId})${traceId ? ` (traceId: ${traceId})` : ''}`)
               // sent is already tracked in workflow, skip
               break
 
             case 'delivered':
-              console.log(`📬 Delivered: ${phone} (campaign: ${campaignId})`)
+              console.log(`📬 Delivered: ${phoneMasked || phone} (campaign: ${campaignId})${traceId ? ` (traceId: ${traceId})` : ''}`)
               try {
                 // Atomic update: only update if status was NOT already delivered/read
                 const now = new Date().toISOString()
@@ -168,7 +173,7 @@ export async function POST(request: NextRequest) {
               break
 
             case 'read':
-              console.log(`👁️ Read: ${phone} (campaign: ${campaignId})`)
+              console.log(`👁️ Read: ${phoneMasked || phone} (campaign: ${campaignId})${traceId ? ` (traceId: ${traceId})` : ''}`)
               try {
                 // Atomic update: only update if status was NOT already read
                 const nowRead = new Date().toISOString()
@@ -211,8 +216,27 @@ export async function POST(request: NextRequest) {
               const mappedError = mapWhatsAppError(errorCode)
               const failureReason = mappedError.userMessage
 
-              console.log(`❌ Failed: ${phone} - [${errorCode}] ${errorTitle} (campaign: ${campaignId})`)
+              console.log(`❌ Failed: ${phoneMasked || phone} - [${errorCode}] ${errorTitle} (campaign: ${campaignId})${traceId ? ` (traceId: ${traceId})` : ''}`)
               console.log(`   Category: ${mappedError.category}, Retryable: ${mappedError.retryable}`)
+
+              if (traceId) {
+                await emitWorkflowTrace({
+                  traceId,
+                  campaignId,
+                  step: 'webhook',
+                  phase: 'webhook_failed_details',
+                  ok: false,
+                  phoneMasked,
+                  extra: {
+                    messageId,
+                    errorCode,
+                    errorTitle,
+                    errorDetails,
+                    category: mappedError.category,
+                    retryable: mappedError.retryable,
+                  },
+                })
+              }
 
               try {
                 const nowFailed = new Date().toISOString()
