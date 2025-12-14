@@ -12,10 +12,12 @@ import { toast } from 'sonner'
 import { createRealtimeChannel, subscribeToTable, activateChannel, removeChannel } from '@/lib/supabase-realtime'
 import type { RealtimePayload, RealtimeTable } from '@/types'
 
+type ToastType = 'success' | 'info' | 'warning' | 'error'
+
 interface NotificationConfig {
     table: RealtimeTable
     getMessage: (payload: RealtimePayload) => string | null
-    type?: 'success' | 'info' | 'warning' | 'error'
+    type?: ToastType
 }
 
 const DEFAULT_NOTIFICATIONS: NotificationConfig[] = [
@@ -25,17 +27,38 @@ const DEFAULT_NOTIFICATIONS: NotificationConfig[] = [
             const data = payload.new as Record<string, unknown> | null
             if (!data) return null
 
+            const oldData = (payload.old as Record<string, unknown> | null) ?? null
+
+            // Realtime payload normalmente traz colunas do Postgres (snake_case).
+            const newStatus = data.status
+            const oldStatus = oldData?.status
+
+            const newCompletedAt = (data.completed_at ?? data.completedAt) as unknown
+            const oldCompletedAt = (oldData?.completed_at ?? oldData?.completedAt) as unknown
+
             if (payload.eventType === 'UPDATE') {
-                if (data.status === 'Concluído') {
-                    return `Campanha "${data.name}" concluída!`
+                // Só notificar quando houver TRANSIÇÃO real para o estado final.
+                // Caso contrário, updates de contadores (delivered/read) após conclusão viram spam.
+                if (newStatus === 'Concluído') {
+                    const statusTransition = oldStatus !== 'Concluído'
+                    const completedAtTransition = (oldCompletedAt == null) && (newCompletedAt != null)
+
+                    if (!statusTransition && !completedAtTransition) return null
+
+                    const name = (data.name as string | undefined) ?? 'Sem nome'
+                    return `Campanha "${name}" concluída!`
                 }
-                if (data.status === 'Falhou') {
-                    return `Campanha "${data.name}" falhou`
+                if (newStatus === 'Falhou') {
+                    const statusTransition = oldStatus !== 'Falhou'
+                    if (!statusTransition) return null
+
+                    const name = (data.name as string | undefined) ?? 'Sem nome'
+                    return `Campanha "${name}" falhou`
                 }
             }
             return null
         },
-        type: 'success',
+        // Tipo é inferido no handler (Concluído=success, Falhou=error)
     },
     // Note: Contacts notifications removed to avoid spam during bulk imports
 ]
@@ -67,6 +90,35 @@ export function useRealtimeNotifications({
 }: UseRealtimeNotificationsOptions = {}) {
     const channelRef = useRef<ReturnType<typeof createRealtimeChannel> | null>(null)
     const mountedRef = useRef(true)
+    const notifiedRef = useRef<Set<string>>(new Set())
+
+    const inferType = useCallback((config: NotificationConfig, payload: RealtimePayload): ToastType => {
+        if (config.type) return config.type
+
+        if (config.table === 'campaigns' && payload.eventType === 'UPDATE') {
+            const data = payload.new as Record<string, unknown> | null
+            const status = data?.status
+            if (status === 'Falhou') return 'error'
+            if (status === 'Concluído') return 'success'
+        }
+
+        return 'info'
+    }, [])
+
+    const dedupeKey = useCallback((config: NotificationConfig, payload: RealtimePayload): string | null => {
+        if (config.table !== 'campaigns') return null
+        if (payload.eventType !== 'UPDATE') return null
+
+        const data = payload.new as Record<string, unknown> | null
+        if (!data) return null
+
+        const id = (data.id as string | undefined) ?? null
+        const status = (data.status as string | undefined) ?? null
+        if (!id || !status) return null
+
+        // Um toast por campanha+status por sessão
+        return `campaign:${id}:${status}`
+    }, [])
 
     const handleEvent = useCallback((config: NotificationConfig, payload: RealtimePayload) => {
         if (!mountedRef.current) return
@@ -74,22 +126,31 @@ export function useRealtimeNotifications({
         const message = config.getMessage(payload)
         if (!message) return
 
+        // Dedupe extra para proteger contra múltiplas subscriptions/reconnect/StrictMode.
+        const key = dedupeKey(config, payload)
+        if (key) {
+            if (notifiedRef.current.has(key)) return
+            notifiedRef.current.add(key)
+        }
+
+        const type = inferType(config, payload)
+
         // Show toast based on type
-        switch (config.type) {
+        switch (type) {
             case 'success':
-                toast.success(message)
+                toast.success(message, key ? { id: key } : undefined)
                 break
             case 'warning':
-                toast.warning(message)
+                toast.warning(message, key ? { id: key } : undefined)
                 break
             case 'error':
-                toast.error(message)
+                toast.error(message, key ? { id: key } : undefined)
                 break
             case 'info':
             default:
-                toast.info(message)
+                toast.info(message, key ? { id: key } : undefined)
         }
-    }, [])
+    }, [dedupeKey, inferType])
 
     useEffect(() => {
         if (!enabled) return
