@@ -136,6 +136,94 @@ async function graphGet(
 	return { ok: res.ok, status: res.status, json }
 }
 
+function extractGraphError(json: any) {
+	const err = json?.error || json
+	return {
+		message: err?.message ?? null,
+		type: err?.type ?? null,
+		code: err?.code ?? null,
+		error_subcode: err?.error_subcode ?? null,
+		fbtrace_id: err?.fbtrace_id ?? null,
+		error_user_title: err?.error_user_title ?? null,
+		error_user_msg: err?.error_user_msg ?? null,
+		error_data: err?.error_data ?? null,
+	}
+}
+
+function buildMissingPermissionsSteps(params: { objectLabel: string; objectId: string }) {
+	return [
+		`Confirme que o ${params.objectLabel} (${params.objectId}) está correto (copie do painel do WhatsApp Manager).`,
+		'No Business Manager: crie/seleciona um System User (recomendado) e atribua os ativos do WhatsApp (WABA + Phone Number).',
+		'Gere um token (ideal: System User) com as permissões whatsapp_business_messaging e whatsapp_business_management.',
+		'No app SmartZap: cole esse token e os IDs corretos em Ajustes → Credenciais WhatsApp.',
+		'Volte aqui e clique em Atualizar para revalidar.',
+	]
+}
+
+async function assertGraphObjectReadable(params: {
+	objectId: string
+	accessToken: string
+	fields?: string
+	objectLabel: string
+}): Promise<{ ok: true } | { ok: false; check: DiagnosticCheck }> {
+	const fields = (params.fields || 'id').trim()
+	const r = await graphGet(`/${params.objectId}`, params.accessToken, { fields })
+
+	if (r.ok) return { ok: true }
+
+	const ge = extractGraphError(r.json)
+	const code = Number(ge.code)
+	const subcode = Number(ge.error_subcode)
+	const isMissingPermissionsOrWrongId = code === 100 && subcode === 33
+	const isTokenInvalid = code === 190
+
+	const nextSteps = isMissingPermissionsOrWrongId
+		? buildMissingPermissionsSteps({ objectLabel: params.objectLabel, objectId: params.objectId })
+		: isTokenInvalid
+			? [
+				'Regenere o token (pode estar expirado/invalidado).',
+				'Garanta que o token foi gerado para o Business/ativo correto e com as permissões de WhatsApp.',
+				'Atualize as credenciais no SmartZap e tente novamente.',
+			]
+			: [
+				'Confira os detalhes técnicos (error code/subcode/fbtrace_id).',
+				'Tente novamente após alguns minutos (pode ser instabilidade).',
+				'Se persistir, envie o relatório ao suporte com fbtrace_id.',
+			]
+
+	const title = `Acesso ao ${params.objectLabel}`
+	const message = isMissingPermissionsOrWrongId
+		? `Sem acesso ao ${params.objectLabel} pelo token atual (ou ID incorreto).`
+		: isTokenInvalid
+			? `Token inválido/expirado ao consultar ${params.objectLabel}.`
+			: `Falha ao consultar ${params.objectLabel} (ver detalhes).`
+
+	return {
+		ok: false,
+		check: {
+			id: `meta_access_${params.objectLabel.toLowerCase().replace(/[^a-z0-9]+/g, '_')}`,
+			title,
+			status: 'fail',
+			message,
+			details: {
+				objectId: params.objectId,
+				error: ge,
+				nextSteps,
+				docs:
+					'Graph API error handling: https://developers.facebook.com/docs/graph-api/guides/error-handling',
+			},
+			actions: [
+				{
+					id: 'open_settings',
+					label: 'Abrir Ajustes',
+					kind: 'link',
+					href: '/settings',
+				},
+			],
+		},
+	}
+}
+
 async function tryGetWithFields(objectId: string, accessToken: string, fieldsList: string[]) {
 	for (const fields of fieldsList) {
 		const res = await graphGet(`/${objectId}`, accessToken, { fields })
@@ -623,6 +711,19 @@ export async function GET() {
 
 	// 2c) WABA
 	try {
+		// 2c.0) Confirma acesso direto ao objeto WABA (pega erros 100/33 com mensagem bem orientada)
+		{
+			const access = await assertGraphObjectReadable({
+				objectId: credentials.businessAccountId,
+				accessToken: credentials.accessToken,
+				fields: 'id,name',
+				objectLabel: 'WABA',
+			})
+			if (!access.ok) {
+				checks.push(access.check)
+			}
+		}
+
 		const waba = await tryGetWithFields(credentials.businessAccountId, credentials.accessToken, [
 			'id,name,currency,timezone_id,ownership_type,account_review_status',
 			'id,name,currency,timezone_id',
@@ -701,6 +802,19 @@ export async function GET() {
 
 	// 2d) Phone number (tier/quality)
 	try {
+		// 2d.0) Confirma acesso direto ao objeto PHONE_NUMBER (pega erros 100/33 com mensagem bem orientada)
+		{
+			const access = await assertGraphObjectReadable({
+				objectId: credentials.phoneNumberId,
+				accessToken: credentials.accessToken,
+				fields: 'id,display_phone_number,verified_name',
+				objectLabel: 'PHONE_NUMBER',
+			})
+			if (!access.ok) {
+				checks.push(access.check)
+			}
+		}
+
 		const phone = await tryGetWithFields(credentials.phoneNumberId, credentials.accessToken, [
 			'id,display_phone_number,verified_name,code_verification_status,quality_rating,messaging_limit_tier,status',
 			'id,display_phone_number,verified_name,quality_score,whatsapp_business_manager_messaging_limit',

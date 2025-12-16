@@ -88,6 +88,22 @@ function formatJsonMaybe(value: unknown): string {
   }
 }
 
+function NextSteps({ value }: { value: unknown }) {
+  const steps = Array.isArray(value) ? (value as unknown[]) : null
+  if (!steps || steps.length === 0) return null
+
+  return (
+    <div className="mt-3">
+      <div className="text-xs text-gray-400">Passo a passo sugerido</div>
+      <ul className="mt-2 list-disc pl-5 space-y-1 text-sm text-gray-200">
+        {steps.map((s, idx) => (
+          <li key={idx}>{typeof s === 'string' ? s : formatJsonMaybe(s)}</li>
+        ))}
+      </ul>
+    </div>
+  )
+}
+
 function ActionButtons(props: {
   actions: MetaDiagnosticsAction[]
   onRunAction: (a: MetaDiagnosticsAction) => void
@@ -383,6 +399,8 @@ export function MetaDiagnosticsView(props: {
                   <h3 className="text-sm font-semibold text-white truncate">{c.title}</h3>
                 </div>
                 <div className="mt-2 text-sm text-gray-300">{c.message}</div>
+
+                <NextSteps value={(c.details as any)?.nextSteps} />
 
                 <ActionButtons
                   actions={c.actions || []}
