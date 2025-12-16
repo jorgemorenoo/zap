@@ -176,6 +176,17 @@ export function MetaDiagnosticsView(props: {
   const lock = React.useMemo(() => hasMetaBusinessLockedEvidence(props.checks), [props.checks])
   const apiActionsDisabled = props.isActing || lock.kind === 'current'
 
+  const hasGraph100_33 = React.useMemo(() => {
+    const checks = props.checks || []
+    for (const c of checks) {
+      const err = (c as any)?.details?.error
+      const code = Number(err?.code ?? err?.error?.code)
+      const sub = Number(err?.error_subcode ?? err?.error?.error_subcode)
+      if (code === 100 && sub === 33) return true
+    }
+    return false
+  }, [props.checks])
+
   return (
     <Page>
       <PageHeader>
@@ -215,6 +226,30 @@ export function MetaDiagnosticsView(props: {
           </button>
         </PageActions>
       </PageHeader>
+
+      {hasGraph100_33 && (
+        <div className="glass-panel rounded-2xl p-6 border border-amber-500/20 bg-amber-500/5 mb-6">
+          <div className="flex items-start gap-3">
+            <AlertTriangle className="mt-0.5 text-amber-300" size={18} />
+            <div className="min-w-0">
+              <div className="text-white font-semibold">Como interpretar: erro 100 (subcode 33)</div>
+              <div className="text-sm text-gray-200/90 mt-1">
+                Esse erro quase sempre significa: <b>ID incorreto</b> OU <b>token sem acesso ao ativo</b> (WABA/PHONE_NUMBER).
+                Normalmente é permissão/atribuição — não é “bloqueio de conta”.
+              </div>
+              <ul className="mt-3 list-disc pl-5 space-y-1 text-sm text-gray-200">
+                <li>Confirme se o <b>phone_number_id</b> e o <b>waba_id</b> foram copiados do WhatsApp Manager correto.</li>
+                <li>Gere um token do <b>System User</b> e atribua os ativos (WABA + Phone Number) no Business Manager.</li>
+                <li>Garanta os escopos <span className="font-mono">whatsapp_business_messaging</span> e <span className="font-mono">whatsapp_business_management</span>.</li>
+                <li>Volte aqui e clique em <b>Atualizar</b>.</li>
+              </ul>
+              <div className="mt-3 text-xs text-gray-400">
+                Dica: configurando <b>Meta App ID/Secret</b> em Configurações, o diagnóstico consegue validar escopos e origem do token via <span className="font-mono">/debug_token</span>.
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Summary */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">

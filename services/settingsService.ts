@@ -34,6 +34,41 @@ export const settingsService = {
     return localSettings;
   },
 
+  // =============================================================================
+  // META APP (opcional) — debug_token e diagnóstico avançado
+  // =============================================================================
+
+  getMetaAppConfig: async (): Promise<{
+    source: 'db' | 'env' | 'none'
+    appId: string | null
+    hasAppSecret: boolean
+    isConfigured: boolean
+  }> => {
+    const response = await fetch('/api/settings/meta-app', { cache: 'no-store' })
+    if (!response.ok) throw new Error('Failed to fetch Meta App config')
+    return response.json()
+  },
+
+  saveMetaAppConfig: async (data: { appId: string; appSecret: string }): Promise<void> => {
+    const response = await fetch('/api/settings/meta-app', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(data),
+    })
+    if (!response.ok) {
+      const error = await response.json().catch(() => ({}))
+      throw new Error((error as any)?.error || 'Failed to save Meta App config')
+    }
+  },
+
+  removeMetaAppConfig: async (): Promise<void> => {
+    const response = await fetch('/api/settings/meta-app', { method: 'DELETE' })
+    if (!response.ok) {
+      const error = await response.json().catch(() => ({}))
+      throw new Error((error as any)?.error || 'Failed to remove Meta App config')
+    }
+  },
+
   /**
    * Save settings - credentials go to server, UI state stays local
    */

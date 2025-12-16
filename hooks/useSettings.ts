@@ -183,6 +183,13 @@ export const useSettingsController = () => {
     staleTime: 60 * 1000,
   });
 
+  // Meta App (opcional): permite debug_token no diagnóstico
+  const metaAppQuery = useQuery({
+    queryKey: ['metaAppConfig'],
+    queryFn: settingsService.getMetaAppConfig,
+    staleTime: 60 * 1000,
+  })
+
   // Test Contact Query - persisted in Supabase
   const testContactQuery = useQuery({
     queryKey: ['testContact'],
@@ -638,6 +645,11 @@ export const useSettingsController = () => {
     saveAIConfig: saveAIMutation.mutateAsync,
     removeAIKey: removeAIMutation.mutateAsync,
     isSavingAI: saveAIMutation.isPending,
+
+    // Meta App (opcional)
+    metaApp: metaAppQuery.data || null,
+    metaAppLoading: metaAppQuery.isLoading,
+    refreshMetaApp: () => queryClient.invalidateQueries({ queryKey: ['metaAppConfig'] }),
     // Test Contact - persisted in Supabase
     testContact: testContactQuery.data || null,
     testContactLoading: testContactQuery.isLoading,

@@ -30,19 +30,7 @@ export async function GET(request: NextRequest) {
     }
   }
 
-  // 3. Vercel URL (deployment specific)
-  if (process.env.VERCEL_URL) {
-    const url = `https://${process.env.VERCEL_URL}`
-    if (!domains.some(d => d.url === url)) {
-      domains.push({
-        url,
-        source: 'Vercel Deploy',
-        recommended: false,
-      })
-    }
-  }
-
-  // 4. Detect from request host header
+  // 3. Detect from request host header
   const host = headersList.get('host')
   const protocol = headersList.get('x-forwarded-proto') || 'https'
   if (host && !host.includes('localhost')) {

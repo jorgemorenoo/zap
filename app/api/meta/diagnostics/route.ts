@@ -3,6 +3,7 @@ import { getWhatsAppCredentials, getCredentialsSource } from '@/lib/whatsapp-cre
 import { normalizeSubscribedFields, type MetaSubscribedApp } from '@/lib/meta-webhook-subscription'
 import { getVerifyToken } from '@/lib/verify-token'
 import { supabase } from '@/lib/supabase'
+import { getMetaAppCredentials } from '@/lib/meta-app-credentials'
 
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
@@ -613,8 +614,9 @@ export async function GET() {
 	let debugTokenData: any = null
 
 	// 2a) debug_token (opcional, depende de APP_ID/APP_SECRET)
-	const appId = (process.env.META_APP_ID || '').trim()
-	const appSecret = (process.env.META_APP_SECRET || '').trim()
+	const appCreds = await getMetaAppCredentials()
+	const appId = (appCreds?.appId || '').trim()
+	const appSecret = (appCreds?.appSecret || '').trim()
 	if (appId && appSecret) {
 		try {
 			const appAccessToken = `${appId}|${appSecret}`

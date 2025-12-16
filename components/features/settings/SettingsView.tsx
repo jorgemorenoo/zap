@@ -83,6 +83,16 @@ interface SettingsViewProps {
   saveAIConfig?: (data: { apiKey?: string; provider?: string; model?: string }) => Promise<void>;
   removeAIKey?: (provider: 'google' | 'openai' | 'anthropic') => Promise<void>;
   isSavingAI?: boolean;
+
+  // Meta App (opcional) — debug_token no diagnóstico
+  metaApp?: {
+    source: 'db' | 'env' | 'none';
+    appId: string | null;
+    hasAppSecret: boolean;
+    isConfigured: boolean;
+  } | null;
+  metaAppLoading?: boolean;
+  refreshMetaApp?: () => void;
   // Test Contact - Supabase
   testContact?: { name?: string; phone: string } | null;
   saveTestContact?: (contact: { name?: string; phone: string }) => Promise<void>;
@@ -197,6 +207,11 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
   saveAIConfig,
   removeAIKey,
   isSavingAI,
+
+  // Meta App
+  metaApp,
+  metaAppLoading,
+  refreshMetaApp,
   // Test Contact Props - Supabase
   testContact,
   saveTestContact,
@@ -231,6 +246,12 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
 
   // Webhook explanation expanded state
   const [showWebhookExplanation, setShowWebhookExplanation] = useState(false);
+
+  // Meta App (opcional) form state
+  const [isEditingMetaApp, setIsEditingMetaApp] = useState(false);
+  const [metaAppIdDraft, setMetaAppIdDraft] = useState('');
+  const [metaAppSecretDraft, setMetaAppSecretDraft] = useState('');
+  const [isSavingMetaApp, setIsSavingMetaApp] = useState(false);
 
   // Expanded URL state (to show full URL inline)
   const [expandedUrlPhoneId, setExpandedUrlPhoneId] = useState<string | null>(null);
@@ -846,6 +867,179 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
             onRemoveKey={removeAIKey}
             isSaving={!!isSavingAI}
           />
+        )}
+
+        {/* Meta App (opcional) — debug_token e diagnóstico avançado */}
+        {settings.isConnected && (
+          <div className="glass-panel rounded-2xl p-8">
+            <div className="flex items-start justify-between gap-4">
+              <div>
+                <h3 className="text-lg font-semibold text-white mb-2 flex items-center gap-2">
+                  <span className="w-1 h-6 bg-sky-500 rounded-full"></span>
+                  Meta App (opcional)
+                </h3>
+                <p className="text-sm text-gray-400">
+                  Habilita validação forte do token via <span className="font-mono">/debug_token</span> no Diagnóstico da Meta
+                  (expiração, escopos, app_id e granular_scopes).
+                  <br />
+                  O <b>App Secret</b> fica no servidor (Supabase) e <b>nunca</b> é exibido no frontend.
+                </p>
+              </div>
+
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => refreshMetaApp?.()}
+                  className="px-3 py-2 rounded-lg bg-white/5 text-white hover:bg-white/10 border border-white/10 hover:border-white/20 transition-all text-sm font-medium inline-flex items-center gap-2"
+                >
+                  <RefreshCw size={14} /> Atualizar
+                </button>
+                <Link
+                  href="/settings/meta-diagnostics"
+                  className="px-3 py-2 rounded-lg bg-white/5 text-white hover:bg-white/10 border border-white/10 hover:border-white/20 transition-all text-sm font-medium inline-flex items-center gap-2"
+                >
+                  <ExternalLink size={14} /> Abrir diagnóstico
+                </Link>
+              </div>
+            </div>
+
+            <div className="mt-6 grid grid-cols-1 lg:grid-cols-3 gap-4">
+              <div className="rounded-xl border border-white/10 bg-zinc-900/50 p-4">
+                <div className="text-xs text-gray-400">Status</div>
+                <div className="mt-1 text-sm text-white">
+                  {metaAppLoading ? 'Carregando…' : (metaApp?.isConfigured ? 'Configurado' : 'Não configurado')}
+                </div>
+              </div>
+              <div className="rounded-xl border border-white/10 bg-zinc-900/50 p-4">
+                <div className="text-xs text-gray-400">App ID</div>
+                <div className="mt-1 text-sm text-white font-mono">
+                  {metaAppLoading ? '—' : (metaApp?.appId || '—')}
+                </div>
+              </div>
+              <div className="rounded-xl border border-white/10 bg-zinc-900/50 p-4">
+                <div className="text-xs text-gray-400">Fonte</div>
+                <div className="mt-1 text-sm text-white">
+                  {metaAppLoading ? '—' : (metaApp?.source === 'db' ? 'Banco (Supabase)' : metaApp?.source === 'env' ? 'Env vars' : '—')}
+                </div>
+              </div>
+            </div>
+
+            <div className="mt-6">
+              {!isEditingMetaApp ? (
+                <div className="flex flex-wrap items-center gap-3">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setIsEditingMetaApp(true);
+                      setMetaAppIdDraft(metaApp?.appId || '');
+                      setMetaAppSecretDraft('');
+                    }}
+                    className="px-4 py-2.5 rounded-xl bg-white/5 text-white hover:bg-white/10 border border-white/10 hover:border-white/20 transition-all text-sm font-medium inline-flex items-center gap-2"
+                  >
+                    <Edit2 size={14} /> Configurar App ID/Secret
+                  </button>
+
+                  {metaApp?.source === 'db' && metaApp?.isConfigured && (
+                    <button
+                      type="button"
+                      onClick={async () => {
+                        try {
+                          setIsSavingMetaApp(true);
+                          const res = await fetch('/api/settings/meta-app', { method: 'DELETE' });
+                          const json = await res.json().catch(() => ({}));
+                          if (!res.ok) throw new Error((json as any)?.error || 'Falha ao remover');
+                          toast.success('Meta App removido (DB)');
+                          refreshMetaApp?.();
+                        } catch (e) {
+                          toast.error(e instanceof Error ? e.message : 'Falha ao remover');
+                        } finally {
+                          setIsSavingMetaApp(false);
+                        }
+                      }}
+                      disabled={isSavingMetaApp}
+                      className="px-4 py-2.5 rounded-xl bg-red-500/10 text-red-200 hover:bg-red-500/20 border border-red-500/20 transition-all text-sm font-medium inline-flex items-center gap-2 disabled:opacity-50"
+                    >
+                      <Trash2 size={14} /> Remover do banco
+                    </button>
+                  )}
+                </div>
+              ) : (
+                <div className="rounded-2xl border border-white/10 bg-zinc-900/30 p-6">
+                  <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                    <div>
+                      <label className="block text-sm font-medium text-gray-300 mb-2">Meta App ID</label>
+                      <input
+                        type="text"
+                        value={metaAppIdDraft}
+                        onChange={(e) => setMetaAppIdDraft(e.target.value)}
+                        placeholder="ex: 123456789012345"
+                        className="w-full px-4 py-3 bg-zinc-900/50 border border-white/10 rounded-xl focus:ring-2 focus:ring-sky-500/40 focus:border-sky-500/40 outline-none font-mono text-sm text-white transition-all"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-sm font-medium text-gray-300 mb-2">Meta App Secret</label>
+                      <input
+                        type="password"
+                        value={metaAppSecretDraft}
+                        onChange={(e) => setMetaAppSecretDraft(e.target.value)}
+                        placeholder="••••••••••••••••"
+                        className="w-full px-4 py-3 bg-zinc-900/50 border border-white/10 rounded-xl focus:ring-2 focus:ring-sky-500/40 focus:border-sky-500/40 outline-none font-mono text-sm text-white transition-all"
+                      />
+                      <p className="text-xs text-gray-500 mt-2">
+                        Por segurança, nunca mostramos o secret atual. Para trocar, cole um novo e salve.
+                      </p>
+                    </div>
+                  </div>
+
+                  <div className="mt-6 flex justify-end gap-3">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setIsEditingMetaApp(false);
+                        setMetaAppSecretDraft('');
+                      }}
+                      className="px-4 py-2.5 rounded-xl border border-white/10 text-gray-300 font-medium hover:bg-white/5 transition-colors"
+                    >
+                      Cancelar
+                    </button>
+                    <button
+                      type="button"
+                      onClick={async () => {
+                        try {
+                          if (!metaAppIdDraft.trim() || !metaAppSecretDraft.trim()) {
+                            toast.error('App ID e App Secret são obrigatórios');
+                            return;
+                          }
+
+                          setIsSavingMetaApp(true);
+                          const res = await fetch('/api/settings/meta-app', {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({ appId: metaAppIdDraft.trim(), appSecret: metaAppSecretDraft.trim() }),
+                          });
+                          const json = await res.json().catch(() => ({}));
+                          if (!res.ok) throw new Error((json as any)?.error || 'Falha ao salvar');
+
+                          toast.success('Meta App salvo com sucesso');
+                          setIsEditingMetaApp(false);
+                          setMetaAppSecretDraft('');
+                          refreshMetaApp?.();
+                        } catch (e) {
+                          toast.error(e instanceof Error ? e.message : 'Falha ao salvar');
+                        } finally {
+                          setIsSavingMetaApp(false);
+                        }
+                      }}
+                      disabled={isSavingMetaApp}
+                      className="px-5 py-2.5 rounded-xl bg-sky-500 hover:bg-sky-400 text-black font-bold transition-colors disabled:opacity-50"
+                    >
+                      {isSavingMetaApp ? 'Salvando…' : 'Salvar'}
+                    </button>
+                  </div>
+                </div>
+              )}
+            </div>
+          </div>
         )}
 
         {/* Form - Only visible if disconnected OR editing */}

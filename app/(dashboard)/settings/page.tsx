@@ -83,6 +83,11 @@ export default function SettingsPage() {
             saveAIConfig={controller.saveAIConfig}
             removeAIKey={controller.removeAIKey}
             isSavingAI={controller.isSavingAI}
+
+            // Meta App (opcional)
+            metaApp={controller.metaApp}
+            metaAppLoading={controller.metaAppLoading}
+            refreshMetaApp={controller.refreshMetaApp}
             // Test Contact - Supabase
             testContact={controller.testContact}
             saveTestContact={controller.saveTestContact}
