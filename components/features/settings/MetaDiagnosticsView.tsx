@@ -427,6 +427,133 @@ function Pill({ tone, children }: { tone: 'ok' | 'warn' | 'fail' | 'neutral'; ch
   return <span className={`${base} bg-white/5 border-white/10 text-gray-200`}>{children}</span>
 }
 
+function TokenValidityCard({ data, checks }: { data?: MetaDiagnosticsResponse; checks: MetaDiagnosticsCheck[] }) {
+  const dbgEnabled = Boolean(data?.debugTokenValidation?.enabled)
+
+  const dbgCheck = checks.find((c) => c.id === 'meta_debug_token')
+  const meCheck = checks.find((c) => c.id === 'meta_me')
+
+  const dbgAttempted = Boolean(data?.debugTokenValidation?.attempted)
+  const dbgOk = data?.debugTokenValidation?.ok
+  const dbgIsValid = data?.debugTokenValidation?.isValid
+
+  const status: MetaDiagnosticsCheckStatus = (() => {
+    // Preferimos a “prova” do /debug_token quando habilitado.
+    if (dbgEnabled && dbgAttempted) {
+      if (dbgOk === true && dbgIsValid === true) return 'pass'
+      if (dbgOk === true && dbgIsValid === false) return 'fail'
+      if (dbgOk === false) return 'warn'
+    }
+
+    // Fallback: /me indica que o token ao menos autentica.
+    if (meCheck?.status === 'pass') return dbgEnabled ? 'warn' : 'info'
+    if (meCheck?.status === 'fail') return 'fail'
+
+    return 'info'
+  })()
+
+  const title = 'Token de acesso'
+
+  const subtitle = (() => {
+    if (dbgEnabled && dbgAttempted) {
+      if (dbgOk === true && dbgIsValid === true) return 'Válido (confirmado pela Meta via /debug_token)'
+      if (dbgOk === true && dbgIsValid === false) return 'Inválido (confirmado pela Meta via /debug_token)'
+      return 'Não foi possível confirmar via /debug_token (best-effort)'
+    }
+
+    if (meCheck?.status === 'pass') {
+      return dbgEnabled
+        ? 'Autentica via /me, mas ainda não confirmamos /debug_token'
+        : 'Autentica via /me, mas não dá pra provar escopos/expiração sem /debug_token'
+    }
+    if (meCheck?.status === 'fail') return 'Falha ao autenticar (/me) — token pode estar inválido/expirado'
+    return 'Sem informação suficiente (ainda carregando ou chamada falhou)'
+  })()
+
+  const nextSteps = (() => {
+    if (dbgEnabled && dbgAttempted && dbgOk === true && dbgIsValid === false) {
+      return [
+        'Gere um novo token (recomendado: System User no Business Manager).',
+        'Antes de gerar, atribua os ativos (WABA + Phone Number) ao System User.',
+        'Salve o token em Ajustes e clique em “Atualizar”.',
+      ]
+    }
+
+    if (!dbgEnabled) {
+      return [
+        'Opcional (recomendado): configure Meta App ID/Secret em Ajustes para habilitar /debug_token.',
+        'Com /debug_token ativo, você vê validade, expiração e escopos com prova (menos suporte).',
+      ]
+    }
+
+    if (dbgEnabled && (!dbgAttempted || (dbgAttempted && dbgOk !== true))) {
+      return [
+        'Clique em “Atualizar” para tentar validar novamente via /debug_token.',
+        'Se falhar, confira se Meta App ID/Secret estão corretos em Ajustes.',
+      ]
+    }
+
+    // Se chegou aqui, o token parece ok.
+    return [
+      'Se ainda “não envia”, confira permissões (escopos) e acesso ao WABA/Phone Number nos checks abaixo.',
+    ]
+  })()
+
+  return (
+    <div className="glass-panel rounded-2xl p-6 border border-white/10">
+      <div className="flex items-start justify-between gap-4">
+        <div className="min-w-0">
+          <div className="text-xs text-gray-500">Token</div>
+          <div className="mt-2 text-sm text-white font-medium">{title}</div>
+          <div className="mt-2 text-sm text-gray-300">{subtitle}</div>
+          {dbgEnabled ? (
+            <div className="mt-2 text-xs text-gray-500">
+              Fonte: <span className="font-mono">/debug_token</span> (quando disponível) + <span className="font-mono">/me</span>
+            </div>
+          ) : (
+            <div className="mt-2 text-xs text-gray-500">
+              Fonte: <span className="font-mono">/me</span> (best-effort). Para prova de escopos/expiração, habilite <span className="font-mono">/debug_token</span>.
+            </div>
+          )}
+        </div>
+        <div className="shrink-0">
+          <StatusBadge status={status} />
+        </div>
+      </div>
+
+      {nextSteps.length > 0 && (
+        <div className="mt-4 bg-zinc-900/40 border border-white/10 rounded-xl p-4">
+          <div className="text-sm text-white font-semibold">O que fazer</div>
+          <ul className="mt-2 list-disc pl-5 space-y-1 text-sm text-gray-200">
+            {nextSteps.map((s, i) => (
+              <li key={i}>{s}</li>
+            ))}
+          </ul>
+          {!dbgEnabled && (
+            <div className="mt-3 text-xs text-gray-400">
+              Ir para <Link href="/settings" className="underline">Ajustes</Link> para configurar Meta App.
+            </div>
+          )}
+        </div>
+      )}
+
+      {(dbgCheck?.details || meCheck?.details) && (
+        <details className="mt-4">
+          <summary className="cursor-pointer text-xs text-gray-400 hover:text-white transition-colors">
+            Ver detalhes técnicos
+          </summary>
+          <pre className="mt-3 text-xs bg-zinc-950/50 border border-white/10 rounded-xl p-4 overflow-auto text-gray-200">
+            {formatJsonMaybe({
+              debug_token: dbgCheck?.details || null,
+              me: meCheck?.details || null,
+            })}
+          </pre>
+        </details>
+      )}
+    </div>
+  )
+}
+
 function TokenScopesCard({ data, checks }: { data?: MetaDiagnosticsResponse; checks: MetaDiagnosticsCheck[] }) {
   const dbgEnabled = Boolean(data?.debugTokenValidation?.enabled)
   const scopesCheck = checks.find((c) => c.id === 'meta_token_scopes')
@@ -448,7 +575,19 @@ function TokenScopesCard({ data, checks }: { data?: MetaDiagnosticsResponse; che
     ? ((mePermsCheck?.details as any).granted as unknown[]).filter((x) => typeof x === 'string') as string[]
     : []
 
+  const verificationMode: 'debug_token' | 'me_permissions' | 'unknown' =
+    foundScopes.length > 0
+      ? 'debug_token'
+      : granted.length > 0
+        ? 'me_permissions'
+        : 'unknown'
+
   const missingCritical = missing.includes('whatsapp_business_messaging')
+
+  const cardStatus: MetaDiagnosticsCheckStatus = (() => {
+    if (verificationMode === 'unknown') return 'info'
+    return missing.length === 0 ? 'pass' : (missingCritical ? 'fail' : 'warn')
+  })()
 
   return (
     <div className="glass-panel rounded-2xl p-6 border border-white/10">
@@ -457,11 +596,11 @@ function TokenScopesCard({ data, checks }: { data?: MetaDiagnosticsResponse; che
           <div className="text-xs text-gray-500">Token</div>
           <div className="mt-2 text-sm text-white font-medium">Permissões (escopos) — checklist</div>
           <div className="mt-2 text-sm text-gray-300">
-            Aqui você vê o que o token <b>realmente</b> tem (ideal: via <span className="font-mono">/debug_token</span>) e o que falta.
+            Aqui você vê <b>o que conseguimos verificar</b> sobre escopos e o que é necessário para o SmartZap funcionar.
           </div>
         </div>
         <div className="shrink-0">
-          <StatusBadge status={missing.length === 0 ? 'pass' : (missingCritical ? 'fail' : 'warn')} />
+          <StatusBadge status={cardStatus} />
         </div>
       </div>
 
@@ -470,12 +609,19 @@ function TokenScopesCard({ data, checks }: { data?: MetaDiagnosticsResponse; che
         <div className="mt-2 flex flex-wrap gap-2">
           {required.map((s) => {
             const ok = foundScopes.includes(s) || granted.includes(s)
-            return <Pill key={s} tone={ok ? 'ok' : 'fail'}>{s}</Pill>
+            const tone: 'ok' | 'warn' | 'fail' | 'neutral' =
+              verificationMode === 'unknown' ? 'neutral' : (ok ? 'ok' : 'fail')
+            return <Pill key={s} tone={tone}>{s}</Pill>
           })}
         </div>
+        {verificationMode === 'unknown' && (
+          <div className="mt-3 text-xs text-gray-400">
+            Ainda não conseguimos listar os escopos desse token. Isso acontece quando <span className="font-mono">/debug_token</span> não está habilitado e <span className="font-mono">/me/permissions</span> não retorna dados para este tipo de token.
+          </div>
+        )}
       </div>
 
-      {missing.length > 0 && (
+      {verificationMode !== 'unknown' && missing.length > 0 && (
         <div className="mt-4 bg-zinc-900/40 border border-white/10 rounded-xl p-4">
           <div className="text-sm text-white font-semibold">Faltando</div>
           <div className="mt-2 flex flex-wrap gap-2">
@@ -498,7 +644,13 @@ function TokenScopesCard({ data, checks }: { data?: MetaDiagnosticsResponse; che
           <div>
             <div className="text-xs text-gray-400">Fonte principal</div>
             <div className="mt-1 text-sm text-gray-200">
-              {dbgEnabled ? 'debug_token (recomendado)' : '/me/permissions (best-effort)'}
+              {verificationMode === 'debug_token'
+                ? 'debug_token (recomendado)'
+                : verificationMode === 'me_permissions'
+                  ? '/me/permissions (best-effort)'
+                  : dbgEnabled
+                    ? 'debug_token (habilitado, mas não retornou escopos)'
+                    : 'indisponível (não conseguimos listar escopos)'}
             </div>
           </div>
           <div>
@@ -964,9 +1116,22 @@ export function MetaDiagnosticsView(props: {
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 mb-6">
+        <TokenValidityCard data={props.data} checks={props.checks} />
         <TokenScopesCard data={props.data} checks={props.checks} />
-        <Simulate10033Card />
       </div>
+
+      <details className="glass-panel rounded-2xl p-6 mb-6">
+        <summary className="cursor-pointer list-none flex items-center justify-between gap-3">
+          <div>
+            <div className="text-xs text-gray-500">Ferramentas avançadas</div>
+            <div className="mt-1 text-sm text-white">Simuladores e debug para suporte/aula</div>
+          </div>
+          <ChevronDown size={16} className="text-gray-400" />
+        </summary>
+        <div className="mt-4">
+          <Simulate10033Card />
+        </div>
+      </details>
 
       {hasGraph100_33 && (
         <div className="glass-panel rounded-2xl p-6 border border-amber-500/20 bg-amber-500/5 mb-6">

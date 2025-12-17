@@ -111,6 +111,9 @@ export const useSettingsController = () => {
   const [accountHealth, setAccountHealth] = useState<AccountHealth | null>(null);
   const [isCheckingHealth, setIsCheckingHealth] = useState(false);
 
+  // Connection test state (Settings -> Configuração da API)
+  const [isTestingConnection, setIsTestingConnection] = useState(false);
+
   // --- Queries ---
   const settingsQuery = useQuery({
     queryKey: ['settings'],
@@ -364,6 +367,42 @@ export const useSettingsController = () => {
     },
   });
 
+  const handleTestConnection = async () => {
+    setIsTestingConnection(true);
+    const toastId = toast.loading('Testando conexão com a Meta…');
+    try {
+      // Se o usuário ainda não salvou as credenciais, testamos com o que está no formulário.
+      // Se estiver mascarado (***configured***), o backend usa credenciais salvas.
+      const result = await settingsService.testConnection({
+        phoneNumberId: formSettings.phoneNumberId,
+        businessAccountId: formSettings.businessAccountId,
+        accessToken: formSettings.accessToken,
+      });
+
+      toast.dismiss(toastId);
+
+      const phone = result.displayPhoneNumber || result.phoneNumberId || 'OK';
+      toast.success('Teste de conexão bem-sucedido!', {
+        description: result.verifiedName
+          ? `${phone} • ${result.verifiedName}`
+          : `${phone}`,
+      });
+    } catch (err: any) {
+      toast.dismiss(toastId);
+      const msg = err?.message || 'Falha ao testar conexão';
+      const details = err?.details;
+      const hint = (details as any)?.details?.wabaFromPhone
+        ? `WABA do Phone: ${(details as any).details.wabaFromPhone}`
+        : undefined;
+
+      toast.error('Falha no teste de conexão', {
+        description: hint ? `${msg}. ${hint}` : msg,
+      });
+    } finally {
+      setIsTestingConnection(false);
+    }
+  };
+
   const unsubscribeWebhookMessagesMutation = useMutation({
     mutationFn: async () => {
       const response = await fetch('/api/meta/webhooks/subscription', {
@@ -595,6 +634,10 @@ export const useSettingsController = () => {
     onSave: handleSave,
     onSaveSettings: handleSaveSettings,
     onDisconnect: handleDisconnect,
+
+    // Test connection (sem salvar)
+    onTestConnection: handleTestConnection,
+    isTestingConnection,
     // Account limits
     accountLimits,
     refreshLimits,

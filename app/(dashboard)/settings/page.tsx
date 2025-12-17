@@ -54,6 +54,8 @@ export default function SettingsPage() {
             onSave={controller.onSave}
             onSaveSettings={controller.onSaveSettings}
             onDisconnect={controller.onDisconnect}
+            onTestConnection={controller.onTestConnection}
+            isTestingConnection={controller.isTestingConnection}
             accountLimits={controller.accountLimits}
             tierName={controller.tierName}
             limitsError={controller.limitsError}

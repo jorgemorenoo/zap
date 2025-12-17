@@ -148,6 +148,50 @@ export const settingsService = {
     return response.json();
   },
 
+  // =============================================================================
+  // TEST CONNECTION (sem salvar)
+  // =============================================================================
+
+  /**
+   * Testa conexão com a Meta Graph API.
+   * - Se o token vier mascarado (ex: '***configured***'), o backend usa credenciais salvas.
+   * - Não persiste nada; apenas valida.
+   */
+  testConnection: async (data?: {
+    phoneNumberId?: string
+    businessAccountId?: string
+    accessToken?: string
+  }): Promise<{
+    ok: boolean
+    error?: string
+    code?: number
+    errorSubcode?: number
+    details?: any
+    phoneNumberId?: string
+    businessAccountId?: string | null
+    displayPhoneNumber?: string | null
+    verifiedName?: string | null
+    qualityRating?: string | null
+    wabaId?: string | null
+    usedStoredCredentials?: boolean
+  }> => {
+    const response = await fetch('/api/settings/test-connection', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(data || {}),
+    })
+
+    const payload = await response.json().catch(() => ({}))
+    if (!response.ok) {
+      const msg = (payload as any)?.error || 'Falha ao testar conexão'
+      const err: any = new Error(msg)
+      err.details = payload
+      throw err
+    }
+
+    return payload
+  },
+
   /**
    * Get AI settings
    */

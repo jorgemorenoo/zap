@@ -66,6 +66,10 @@ interface SettingsViewProps {
   // Hide header (when shown externally)
   hideHeader?: boolean;
 
+  // Test connection (sem salvar)
+  onTestConnection?: () => void;
+  isTestingConnection?: boolean;
+
   // AI Settings
   aiSettings?: {
     isConfigured: boolean;
@@ -200,6 +204,9 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
   availableDomains,
   webhookPath,
   hideHeader,
+
+  onTestConnection,
+  isTestingConnection,
 
   // AI Props
   aiSettings,
@@ -1130,9 +1137,15 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
             <div className="mt-10 pt-8 border-t border-white/5 flex justify-end gap-4">
               <button
                 className="px-6 py-3 rounded-xl border border-white/10 text-gray-300 font-medium hover:bg-white/5 transition-colors flex items-center gap-2"
-                onClick={() => toast.success('Teste de conexão bem-sucedido!')}
+                onClick={() => onTestConnection?.()}
+                disabled={!!isTestingConnection}
               >
-                <RefreshCw size={18} /> Testar Conexão
+                {isTestingConnection ? (
+                  <Loader2 size={18} className="animate-spin" />
+                ) : (
+                  <RefreshCw size={18} />
+                )}
+                {isTestingConnection ? 'Testando…' : 'Testar Conexão'}
               </button>
               <button
                 className="px-8 py-3 rounded-xl bg-white text-black font-bold hover:bg-gray-200 transition-colors flex items-center gap-2 shadow-[0_0_20px_rgba(255,255,255,0.1)]"
