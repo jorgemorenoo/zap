@@ -1,6 +1,7 @@
 'use client'
 
 import { useEffect, useMemo, useState } from 'react'
+import { useParams } from 'next/navigation'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Label } from '@/components/ui/label'
 import { Input } from '@/components/ui/input'
@@ -22,8 +23,15 @@ type PublicLeadForm = {
   }>
 }
 
-export default function PublicLeadFormPage({ params }: { params: { slug: string } }) {
-  const slug = useMemo(() => String(params?.slug || ''), [params])
+export default function PublicLeadFormPage() {
+  // Em Next.js 16, páginas Client podem não receber `params` da forma tradicional.
+  // `useParams()` é a forma mais confiável para obter o slug no client.
+  const params = useParams<{ slug?: string | string[] }>()
+  const slug = useMemo(() => {
+    const raw = params?.slug
+    if (Array.isArray(raw)) return String(raw[0] || '')
+    return String(raw || '')
+  }, [params])
 
   const [form, setForm] = useState<PublicLeadForm | null>(null)
   const [isLoading, setIsLoading] = useState(true)
@@ -69,6 +77,10 @@ export default function PublicLeadFormPage({ params }: { params: { slug: string 
     }
 
     if (slug) load()
+    else {
+      setLoadError('Link inválido')
+      setIsLoading(false)
+    }
 
     return () => {
       cancelled = true
@@ -249,7 +261,7 @@ export default function PublicLeadFormPage({ params }: { params: { slug: string 
                   </div>
                 ) : null}
 
-                <Button type="submit" className="w-full" disabled={isSubmitting || isLoading}>
+                <Button type="submit" className="w-full" disabled={isSubmitting || isLoading || !form}>
                   {isSubmitting ? 'Enviando…' : 'Enviar'}
                 </Button>
 
