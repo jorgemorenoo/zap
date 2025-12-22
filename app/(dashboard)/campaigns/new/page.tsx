@@ -42,8 +42,7 @@ import { useExchangeRate } from '@/hooks/useExchangeRate'
 const steps = [
   { id: 1, label: 'Configuracao' },
   { id: 2, label: 'Publico' },
-  { id: 3, label: 'Pre-check' },
-  { id: 4, label: 'Agendamento' },
+  { id: 3, label: 'Agendamento' },
 ]
 
 const getDefaultScheduleTime = () => {
@@ -876,7 +875,7 @@ export default function CampaignsNewRealPage() {
   }
 
   useEffect(() => {
-    if (step !== 3) return
+    if (step !== 2) return
     if (!templateSelected || !selectedTemplate?.name) return
     if (audienceMode === 'teste' && selectedTestCount === 0) return
     runPrecheck()
@@ -1085,7 +1084,7 @@ export default function CampaignsNewRealPage() {
   const missingTemplateVars = useMemo(() => {
     // Importante: no passo 1, a regra é "preencher todos os campos obrigatórios".
     // NÃO validamos se a variável dinâmica existe no contato de teste aqui.
-    // A validação de existência/resultado real ocorre no pré-check (passo 3).
+    // A validação de existência/resultado real ocorre no pré-check (etapa de público).
     const isFilled = (v: unknown) => String(v ?? '').trim().length > 0
 
     // Fallback: se não conseguimos montar spec, validamos pelo estado atual dos campos.
@@ -1121,21 +1120,18 @@ export default function CampaignsNewRealPage() {
   const isAudienceComplete = audienceMode === 'teste' ? selectedTestCount > 0 : audienceCount > 0
   const precheckNeedsFix =
     Boolean(precheckTotals && precheckTotals.skipped > 0) && (fixCandidates.length > 0 || bulkKeys.length > 0)
-  const isPrecheckOk =
-    Boolean(precheckTotals) &&
-    !precheckError &&
-    !isPrecheckLoading &&
-    (precheckTotals?.valid ?? 0) > 0 &&
-    !precheckNeedsFix
+  const isPrecheckBlocked = precheckNeedsFix || isPrecheckLoading || Boolean(precheckError)
+  const shouldShowPrecheckPanel =
+    step === 2 && (isPrecheckLoading || precheckError || (precheckTotals?.skipped ?? 0) > 0)
   const isScheduleComplete =
     scheduleMode !== 'agendar' || (scheduleDate.trim().length > 0 && scheduleTime.trim().length > 0)
   const canContinue =
-    step === 1 ? isConfigComplete : step === 2 ? isAudienceComplete : step === 3 ? isPrecheckOk : isScheduleComplete
+    step === 1 ? isConfigComplete : step === 2 ? isAudienceComplete && !isPrecheckBlocked : isScheduleComplete
   const scheduleLabel = scheduleMode === 'agendar' ? 'Agendado' : 'Imediato'
   const scheduleSummaryLabel =
-    step >= 4
+    step >= 3
       ? scheduleLabel
-      : precheckNeedsFix
+      : isPrecheckBlocked
         ? 'Bloqueado (pre-check pendente)'
         : 'A definir'
   const combineModeLabel = combineMode === 'or' ? 'Mais alcance' : 'Mais preciso'
@@ -1233,13 +1229,12 @@ export default function CampaignsNewRealPage() {
 
       <div className="grid grid-cols-1 items-stretch gap-6 xl:grid-cols-[minmax(0,2fr)_minmax(0,1fr)]">
         <div className="space-y-6">
-          <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
+          <div className="grid grid-cols-2 gap-3 md:grid-cols-3">
             {steps.map((item) => {
               const isStepEnabled =
                 item.id === 1 ||
                 (item.id === 2 && isConfigComplete) ||
-                (item.id === 3 && isConfigComplete && isAudienceComplete) ||
-                (item.id === 4 && isConfigComplete && isAudienceComplete && isPrecheckOk)
+                (item.id === 3 && isConfigComplete && isAudienceComplete && !isPrecheckBlocked)
               return (
                 <button
                   key={item.id}
@@ -1254,9 +1249,9 @@ export default function CampaignsNewRealPage() {
                       ? undefined
                       : item.id === 2
                         ? 'Complete a configuracao para avancar'
-                        : item.id === 3
-                          ? 'Complete configuracao e publico para avancar'
-                          : 'Finalize o pre-check para avancar'
+                        : isPrecheckBlocked
+                          ? 'Resolva o pre-check pendente para avancar'
+                          : 'Complete configuracao e publico para avancar'
                   }
                   className={`flex items-center gap-3 rounded-2xl border px-4 py-3 text-left text-sm transition ${
                     step === item.id
@@ -1282,29 +1277,29 @@ export default function CampaignsNewRealPage() {
             <div className="space-y-6">
               <div className="flex flex-col gap-3 lg:flex-row lg:items-center">
                 <input
-                  className="w-full flex-1 rounded-xl border border-white/10 bg-zinc-950/40 px-4 py-2 text-sm text-white placeholder:text-gray-600"
+                  className="w-full h-11 flex-1 rounded-xl border border-white/10 bg-zinc-950/40 px-4 text-sm text-white placeholder:text-gray-600"
                   placeholder="Nome da campanha"
                   value={campaignName}
                   onChange={(event) => setCampaignName(event.target.value)}
                   aria-label="Nome da campanha"
                 />
-                <div className="relative w-full lg:w-45">
+                <div className="relative w-full lg:w-36">
                   <select
-                    className="w-full appearance-none rounded-xl border border-white/10 bg-zinc-950/40 px-3 py-2 pr-9 text-sm text-white"
+                    className="w-full h-11 appearance-none rounded-xl border border-white/10 bg-zinc-950/40 pl-4 pr-10 text-sm text-white"
                     aria-label="Objetivo da campanha"
                   >
                     <option>Utilidade</option>
                     <option>Marketing</option>
-                    <option>Suporte</option>
+                    <option>Autenticacao</option>
                   </select>
-                  <span className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-base text-emerald-200">
+                  <span className="pointer-events-none absolute right-4 top-1/2 -translate-y-1/2 text-lg text-emerald-200">
                     ▾
                   </span>
                 </div>
               </div>
 
               {templateSelected ? (
-                <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-white/10 bg-zinc-950/40 px-4 py-2 text-sm">
+                <div className="flex h-11 flex-wrap items-center justify-between gap-3 rounded-xl border border-white/10 bg-zinc-950/40 px-4 text-sm">
                   <div className="flex items-center gap-3">
                     <span className="inline-flex h-5 w-5 items-center justify-center rounded-full border border-emerald-400/40 text-[10px] text-emerald-300">
                       ✓
@@ -2216,7 +2211,7 @@ export default function CampaignsNewRealPage() {
             </div>
           )}
 
-          {step === 3 && (
+          {shouldShowPrecheckPanel && (
             <div className="space-y-6">
               <div className="rounded-2xl border border-white/10 bg-zinc-900/60 p-6 shadow-[0_12px_30px_rgba(0,0,0,0.35)]">
                 <div className="space-y-1">
@@ -2431,7 +2426,7 @@ export default function CampaignsNewRealPage() {
             </div>
           )}
 
-          {step === 4 && (
+          {step === 3 && (
             <div className="space-y-6">
               <div className="rounded-2xl border border-white/10 bg-zinc-900/60 p-6 shadow-[0_12px_30px_rgba(0,0,0,0.35)]">
                 <div className="space-y-1">
@@ -2573,16 +2568,16 @@ export default function CampaignsNewRealPage() {
                   <>Defina o nome da campanha</>
                 )}
                 {step === 2 && !isAudienceComplete && 'Selecione um publico valido'}
-                {step === 3 && isPrecheckLoading && 'Validando destinatarios...'}
-                {step === 3 && !isPrecheckLoading && precheckNeedsFix && 'Corrija os ignorados do pre-check para continuar'}
-                {step === 3 && !isPrecheckLoading && precheckTotals && (precheckTotals.valid ?? 0) === 0 && 'Nenhum destinatario valido — corrija os ignorados'}
-                {step === 4 && !isScheduleComplete && 'Defina data e horario do agendamento'}
+                {step === 2 && isPrecheckLoading && 'Validando destinatarios...'}
+                {step === 2 && !isPrecheckLoading && precheckNeedsFix && 'Corrija os ignorados do pre-check para continuar'}
+                {step === 2 && !isPrecheckLoading && precheckTotals && (precheckTotals.valid ?? 0) === 0 && 'Nenhum destinatario valido — corrija os ignorados'}
+                {step === 3 && !isScheduleComplete && 'Defina data e horario do agendamento'}
                 {canContinue && footerSummary}
               </div>
               <button
                 onClick={() => {
                   if (!canContinue || isLaunching) return
-                  if (step < 4) {
+                  if (step < 3) {
                     setStep(step + 1)
                     return
                   }
@@ -2595,7 +2590,7 @@ export default function CampaignsNewRealPage() {
                 }`}
                 disabled={!canContinue || isLaunching}
               >
-                {step < 4 ? 'Continuar' : isLaunching ? 'Lancando...' : 'Lancar campanha'}
+                {step < 3 ? 'Continuar' : isLaunching ? 'Lancando...' : 'Lancar campanha'}
               </button>
             </div>
             {launchError && (

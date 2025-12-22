@@ -135,11 +135,23 @@ export async function POST(request: Request) {
       const scheduledMs = new Date(data.scheduledAt).getTime()
       const nowMs = Date.now()
 
-      // Priority: NEXT_PUBLIC_APP_URL > VERCEL_PROJECT_PRODUCTION_URL > VERCEL_URL > localhost
-      const baseUrl = (process.env.NEXT_PUBLIC_APP_URL?.trim())
-        || (process.env.VERCEL_PROJECT_PRODUCTION_URL ? `https://${process.env.VERCEL_PROJECT_PRODUCTION_URL.trim()}` : null)
-        || (process.env.VERCEL_URL ? `https://${process.env.VERCEL_URL.trim()}` : null)
-        || 'http://localhost:3000'
+      const explicitAppUrl = process.env.NEXT_PUBLIC_APP_URL?.trim() || null
+      const vercelEnv = (process.env.VERCEL_ENV || '').trim()
+      const productionUrl = process.env.VERCEL_PROJECT_PRODUCTION_URL
+        ? `https://${process.env.VERCEL_PROJECT_PRODUCTION_URL.trim()}`
+        : null
+      const vercelUrl = process.env.VERCEL_URL ? `https://${process.env.VERCEL_URL.trim()}` : null
+      const requestOrigin = (() => {
+        const proto = request.headers.get('x-forwarded-proto') || 'https'
+        const host = request.headers.get('x-forwarded-host') || request.headers.get('host')
+        if (!host) return null
+        return `${proto}://${host}`
+      })()
+
+      // Preview/dev: prefer origin to avoid cross-deploy scheduling.
+      const baseUrl = (vercelEnv === 'production')
+        ? (explicitAppUrl || productionUrl || vercelUrl || requestOrigin || 'http://localhost:3000')
+        : (requestOrigin || vercelUrl || explicitAppUrl || productionUrl || 'http://localhost:3000')
 
       const isLocalhost = baseUrl.includes('localhost') || baseUrl.includes('127.0.0.1')
 
