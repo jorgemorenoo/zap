@@ -52,7 +52,7 @@ import { flowsService } from '@/services/flowsService'
 
 type Spec = any
 
-type HeaderFormat = 'TEXT' | 'IMAGE' | 'VIDEO' | 'DOCUMENT' | 'LOCATION'
+type HeaderFormat = 'TEXT' | 'IMAGE' | 'VIDEO' | 'GIF' | 'DOCUMENT' | 'LOCATION'
 
 type ButtonType =
   | 'QUICK_REPLY'
@@ -106,7 +106,7 @@ function joinPhone(country: string, number: string): string {
   return `${c}${n}`
 }
 
-const allowedHeaderFormats = new Set<HeaderFormat>(['TEXT', 'IMAGE', 'VIDEO', 'DOCUMENT', 'LOCATION'])
+const allowedHeaderFormats = new Set<HeaderFormat>(['TEXT', 'IMAGE', 'VIDEO', 'GIF', 'DOCUMENT', 'LOCATION'])
 
 function newButtonForType(type: ButtonType): any {
   if (type === 'URL') return { type, text: '', url: 'https://' }
@@ -388,6 +388,9 @@ export function ManualTemplateBuilder({
   const [showDebug, setShowDebug] = React.useState(false)
   const [step, setStep] = React.useState(1)
 
+  const [isUploadingHeaderMedia, setIsUploadingHeaderMedia] = React.useState(false)
+  const [uploadHeaderMediaError, setUploadHeaderMediaError] = React.useState<string | null>(null)
+
   const flowsQuery = useQuery({
     queryKey: ['flows'],
     queryFn: flowsService.list,
@@ -462,11 +465,90 @@ export function ManualTemplateBuilder({
     toast.message('Removemos variáveis inválidas automaticamente.')
   }
 
+  const headerMediaMaxBytes = (format: HeaderFormat): number => {
+    // Guard-rails práticos para evitar travas em serverless.
+    // Refs da doc indexada:
+    // - GIF: mp4 com max 3.5MB
+    // - Outros: usamos limites conservadores compatíveis com o ecossistema WhatsApp.
+    if (format === 'GIF') return 3_500_000
+    if (format === 'IMAGE') return 5 * 1024 * 1024
+    if (format === 'VIDEO') return 16 * 1024 * 1024
+    if (format === 'DOCUMENT') return 20 * 1024 * 1024
+    return 0
+  }
+
+  const headerMediaAccept = (format: HeaderFormat | 'NONE'): string => {
+    if (format === 'IMAGE') return 'image/png,image/jpeg'
+    if (format === 'VIDEO') return 'video/mp4'
+    if (format === 'GIF') return 'video/mp4'
+    if (format === 'DOCUMENT') return 'application/pdf'
+    return ''
+  }
+
+  const uploadHeaderMedia = async (file: File) => {
+    if (!canShowMediaSample) return
+
+    const format = headerType as HeaderFormat
+    if (format === 'GIF' && !isMarketingCategory) {
+      setUploadHeaderMediaError('GIF é permitido apenas em templates MARKETING.')
+      return
+    }
+
+    const max = headerMediaMaxBytes(format)
+    if (max > 0 && file.size > max) {
+      const mb = (max / 1_000_000).toFixed(1)
+      setUploadHeaderMediaError(`Arquivo muito grande para ${format}. Limite: ${mb}MB.`)
+      return
+    }
+
+    setUploadHeaderMediaError(null)
+    setIsUploadingHeaderMedia(true)
+    try {
+      const fd = new FormData()
+      fd.set('file', file)
+      fd.set('format', format)
+
+      const res = await fetch('/api/meta/uploads/template-header', {
+        method: 'POST',
+        body: fd,
+      })
+
+      const data = await res.json().catch(() => null)
+      if (!res.ok) {
+        const msg = String(data?.error || data?.message || 'Falha ao enviar mídia')
+        throw new Error(msg)
+      }
+
+      const handle = String(data?.handle || '').trim()
+      if (!handle) {
+        throw new Error('Upload concluído, mas não recebemos o header_handle.')
+      }
+
+      updateHeader({
+        ...header,
+        format,
+        example: {
+          ...(header?.example || {}),
+          header_handle: [handle],
+        },
+      })
+
+      toast.success('Upload concluído. header_handle preenchido automaticamente.')
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : 'Falha ao enviar mídia'
+      setUploadHeaderMediaError(msg)
+      toast.error(msg)
+    } finally {
+      setIsUploadingHeaderMedia(false)
+    }
+  }
+
   const header: any = spec.header
   const buttons: any[] = Array.isArray(spec.buttons) ? spec.buttons : []
 
   const maxButtons = 10
   const maxButtonText = 25
+  const isMarketingCategory = String(spec.category || '') === 'MARKETING'
   const isAuthCategory = String(spec.category || '') === 'AUTHENTICATION'
   const isLimitedTimeOffer = Boolean(spec.limited_time_offer)
   const allowedButtonTypes = new Set<ButtonType>(
@@ -712,7 +794,9 @@ export function ManualTemplateBuilder({
     !limitedTimeOfferTextTooLong &&
     !limitedTimeOfferCategoryInvalid
 
-  const canShowMediaSample = headerType === 'IMAGE' || headerType === 'VIDEO' || headerType === 'DOCUMENT'
+  const canShowMediaSample = headerType === 'IMAGE' || headerType === 'VIDEO' || headerType === 'GIF' || headerType === 'DOCUMENT'
+  const headerMediaHandleValue = canShowMediaSample ? String(header?.example?.header_handle?.[0] || '').trim() : ''
+  const isHeaderMediaHandleMissing = canShowMediaSample && !headerMediaHandleValue
   const nameValue = String(spec.name || '').trim()
   const isNameValid = Boolean(nameValue) && /^[a-z0-9_]+$/.test(nameValue)
   const isConfigComplete = isNameValid && Boolean(spec.category) && Boolean(spec.language) && Boolean(spec.parameter_format)
@@ -721,6 +805,7 @@ export function ManualTemplateBuilder({
     isHeaderVariableValid &&
     isHeaderFormatValid &&
     !headerTextMissing &&
+    !isHeaderMediaHandleMissing &&
     !hasInvalidNamed &&
     !hasDuplicateNamed &&
     !hasInvalidPositional &&
@@ -1014,10 +1099,22 @@ export function ManualTemplateBuilder({
                         <SelectItem value="TEXT" disabled={isLimitedTimeOffer}>Texto</SelectItem>
                         <SelectItem value="IMAGE">Imagem</SelectItem>
                         <SelectItem value="VIDEO">Vídeo</SelectItem>
+                        <SelectItem value="GIF" disabled={!isMarketingCategory || isLimitedTimeOffer}>GIF (mp4)</SelectItem>
                         <SelectItem value="DOCUMENT" disabled={isLimitedTimeOffer}>Documento</SelectItem>
                         <SelectItem value="LOCATION" disabled={isLimitedTimeOffer}>Localização</SelectItem>
                       </SelectContent>
                     </Select>
+
+                    {headerType === 'GIF' ? (
+                      <p className="text-xs text-gray-500">
+                        Observação: GIF no header é documentado como disponível para Marketing Messages (GIF = mp4, máx 3.5MB).
+                      </p>
+                    ) : null}
+                    {!isMarketingCategory ? (
+                      <p className="text-xs text-gray-500">
+                        Dica: a opção GIF fica disponível apenas em templates MARKETING.
+                      </p>
+                    ) : null}
                   </div>
                 </div>
               )}
@@ -1093,16 +1190,52 @@ export function ManualTemplateBuilder({
 
               {canShowMediaSample ? (
                 <div className="mt-2 space-y-2">
-                  <label className="text-xs font-medium text-gray-300">header_handle (mídia)</label>
-                  <Input
-                    value={header?.example?.header_handle?.[0] || ''}
-                    onChange={(e) => updateHeader({ ...header, example: { ...(header.example || {}), header_handle: [e.target.value] } })}
-                    className="bg-zinc-950/40 border-white/10 text-white"
-                    placeholder="Cole o header_handle (upload resumable: em breve)"
-                  />
-                  <p className="text-xs text-gray-500">
-                    Por enquanto, cole o <span className="font-mono">header_handle</span>. Depois a gente automatiza o upload.
-                  </p>
+                  <label className="text-xs font-medium text-gray-300">Mídia (upload)</label>
+
+                  <div className="flex items-center gap-2">
+                    <Input
+                      type="file"
+                      accept={headerMediaAccept(headerType)}
+                      disabled={isUploadingHeaderMedia}
+                      className="bg-zinc-950/40 border-white/10 text-white"
+                      onChange={(e) => {
+                        const file = e.currentTarget.files?.[0]
+                        // Permite selecionar o mesmo arquivo novamente
+                        e.currentTarget.value = ''
+                        if (!file) return
+                        void uploadHeaderMedia(file)
+                      }}
+                    />
+                    {isUploadingHeaderMedia ? (
+                      <div className="inline-flex items-center gap-2 text-xs text-gray-300 px-2">
+                        <Loader2 className="w-4 h-4 animate-spin" />
+                        Enviando...
+                      </div>
+                    ) : null}
+                  </div>
+
+                  {uploadHeaderMediaError ? (
+                    <p className="text-xs text-amber-300">{uploadHeaderMediaError}</p>
+                  ) : null}
+
+                  <div className="pt-1 space-y-2">
+                    <label className="text-xs font-medium text-gray-300">header_handle (mídia)</label>
+                    <Input
+                      value={header?.example?.header_handle?.[0] || ''}
+                      onChange={(e) => updateHeader({ ...header, example: { ...(header.example || {}), header_handle: [e.target.value] } })}
+                      className="bg-zinc-950/40 border-white/10 text-white"
+                      placeholder="Preenchido automaticamente após o upload (ou cole manualmente)"
+                      disabled={isUploadingHeaderMedia}
+                    />
+                    {isHeaderMediaHandleMissing ? (
+                      <p className="text-xs text-amber-300">
+                        Cabeçalho de mídia exige <span className="font-mono">header_handle</span>.
+                      </p>
+                    ) : null}
+                    <p className="text-xs text-gray-500">
+                      O <span className="font-mono">header_handle</span> é gerado via Resumable Upload (Graph API). Se preferir, você ainda pode colar manualmente.
+                    </p>
+                  </div>
                 </div>
               ) : null}
             </div>
@@ -2143,7 +2276,7 @@ export function ManualTemplateBuilder({
         </div>
       </div>
       <Dialog open={namedVarDialogOpen} onOpenChange={setNamedVarDialogOpen}>
-        <DialogContent className="sm:max-w-[420px]">
+        <DialogContent className="sm:max-w-105">
           <DialogHeader>
             <DialogTitle>Variavel nomeada</DialogTitle>
             <DialogDescription>Use apenas minúsculas, números e underscore.</DialogDescription>

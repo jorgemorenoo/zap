@@ -185,13 +185,13 @@ export const ButtonSchema = z.discriminatedUnion('type', [
 /**
  * Schema Zod para HEADER do template.
  *
- * Suporta formatos: TEXT, IMAGE, VIDEO, DOCUMENT, LOCATION.
+ * Suporta formatos: TEXT, IMAGE, VIDEO, GIF, DOCUMENT, LOCATION.
  */
 export const HeaderSchema = z.object({
-    format: z.enum(['TEXT', 'IMAGE', 'VIDEO', 'DOCUMENT', 'LOCATION']),
+    format: z.enum(['TEXT', 'IMAGE', 'VIDEO', 'GIF', 'DOCUMENT', 'LOCATION']),
     // Para TEXT
     text: z.string().max(60, 'Header texto: máximo 60 caracteres').optional(),
-    // Para mídia (IMAGE, VIDEO, DOCUMENT)
+    // Para mídia (IMAGE, VIDEO, GIF, DOCUMENT)
     example: z.object({
         header_text: z.array(z.string()).optional(), // Para variáveis {{1}} no texto
         header_text_named_params: z.array(z.object({
@@ -597,6 +597,28 @@ export const CreateTemplateSchema = z.object({
             code: z.ZodIssueCode.custom,
             path: ['header', 'text'],
             message: 'Cabeçalho de texto exige um valor.'
+        })
+    }
+
+    // Media header: exige header_handle.
+    if (data.header?.format && ['IMAGE', 'VIDEO', 'GIF', 'DOCUMENT'].includes(String(data.header.format))) {
+        const handle = String((data.header as any)?.example?.header_handle?.[0] || '').trim()
+        if (!handle) {
+            ctx.addIssue({
+                code: z.ZodIssueCode.custom,
+                path: ['header', 'example', 'header_handle'],
+                message: 'Cabeçalho de mídia exige header_handle (faça upload da mídia e informe o handle).'
+            })
+        }
+    }
+
+    // GIF: documentado como restrito ao ecossistema de Marketing Messages.
+    // Guard-rail: só permitimos GIF quando category=MARKETING.
+    if (data.header?.format === 'GIF' && data.category !== 'MARKETING') {
+        ctx.addIssue({
+            code: z.ZodIssueCode.custom,
+            path: ['header', 'format'],
+            message: 'Formato GIF é permitido apenas em templates MARKETING.'
         })
     }
 });

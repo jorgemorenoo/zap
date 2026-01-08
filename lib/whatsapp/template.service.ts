@@ -174,7 +174,7 @@ export class TemplateService {
                         headerComponent.example = { header_text: examples }
                     }
                 }
-            } else if (['IMAGE', 'VIDEO', 'DOCUMENT'].includes(input.header.format)) {
+            } else if (['IMAGE', 'VIDEO', 'GIF', 'DOCUMENT'].includes(input.header.format)) {
                 // Media headers require an example handle
                 if (input.header.example?.header_handle && input.header.example.header_handle.length > 0) {
                     headerComponent.example = { header_handle: input.header.example.header_handle }

@@ -9,6 +9,33 @@ export interface MetaAppCredentials {
 }
 
 /**
+ * Retorna apenas o App ID (sem exigir secret).
+ *
+ * Necessário para APIs da Meta que usam caminhos baseados em /{app_id}/...
+ * (ex.: Resumable Upload API) mas não exigem appSecret.
+ */
+export async function getMetaAppId(): Promise<{
+  appId: string
+  source: MetaAppCredentialsSource
+} | null> {
+  try {
+    const dbAppIdRaw = await settingsDb.get('metaAppId')
+    const dbAppId = String(dbAppIdRaw || '').trim()
+    const envAppId = String(process.env.META_APP_ID || '').trim()
+
+    const appId = (dbAppId || envAppId).trim()
+    if (!appId) return null
+
+    const source: MetaAppCredentialsSource = dbAppId ? 'db' : (envAppId ? 'env' : 'none')
+    return { appId, source }
+  } catch {
+    const envAppId = String(process.env.META_APP_ID || '').trim()
+    if (!envAppId) return null
+    return { appId: envAppId, source: 'env' }
+  }
+}
+
+/**
  * Credenciais do App da Meta (opcional).
  *
  * Usadas para validação forte de tokens via Graph API `/debug_token`.

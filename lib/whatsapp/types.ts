@@ -1,5 +1,5 @@
 export type MetaComponentType = 'HEADER' | 'BODY' | 'FOOTER' | 'BUTTONS' | 'CAROUSEL' | 'LIMITED_TIME_OFFER';
-export type MetaHeaderFormat = 'TEXT' | 'IMAGE' | 'VIDEO' | 'DOCUMENT' | 'LOCATION';
+export type MetaHeaderFormat = 'TEXT' | 'IMAGE' | 'VIDEO' | 'GIF' | 'DOCUMENT' | 'LOCATION';
 export type MetaButtonType =
   | 'QUICK_REPLY'
   | 'URL'
@@ -245,7 +245,7 @@ export interface CreateTemplateInput {
 
   // Components (accept null for Zod compatibility)
   header?: {
-    format: 'TEXT' | 'IMAGE' | 'VIDEO' | 'DOCUMENT' | 'LOCATION';
+    format: 'TEXT' | 'IMAGE' | 'VIDEO' | 'GIF' | 'DOCUMENT' | 'LOCATION';
     text?: string;
     example?: {
       header_text?: string[];
