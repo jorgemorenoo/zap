@@ -27,6 +27,9 @@ import {
   GripVertical,
   Loader2,
   FileText,
+  Upload,
+  CheckCircle2,
+  Trash2,
   X,
 } from 'lucide-react'
 import {
@@ -94,6 +97,16 @@ function countButtonsByType(buttons: any[], type: ButtonType): number {
 
 function countChars(value: unknown): number {
   return String(value ?? '').length
+}
+
+function formatBytes(bytes: number): string {
+  const n = Number(bytes || 0)
+  if (!Number.isFinite(n) || n <= 0) return '0 B'
+  const units = ['B', 'KB', 'MB', 'GB']
+  const i = Math.min(units.length - 1, Math.floor(Math.log(n) / Math.log(1024)))
+  const value = n / 1024 ** i
+  const fixed = i === 0 ? value.toFixed(0) : value.toFixed(1)
+  return `${fixed} ${units[i]}`
 }
 
 function clampText(value: string, max: number): string {
@@ -439,6 +452,7 @@ export function ManualTemplateBuilder({
   const [step, setStep] = React.useState(1)
 
   const [headerMediaPreview, setHeaderMediaPreview] = React.useState<HeaderMediaPreview | null>(null)
+  const headerMediaFileInputRef = React.useRef<HTMLInputElement | null>(null)
 
   const [isUploadingHeaderMedia, setIsUploadingHeaderMedia] = React.useState(false)
   const [uploadHeaderMediaError, setUploadHeaderMediaError] = React.useState<string | null>(null)
@@ -1259,66 +1273,119 @@ export function ManualTemplateBuilder({
 
               {canShowMediaSample ? (
                 <div className="mt-2 space-y-2">
-                  <label className="text-xs font-medium text-gray-300">Mídia (upload)</label>
+                  <div className="flex items-center justify-between">
+                    <label className="text-xs font-medium text-gray-300">Mídia do cabeçalho</label>
 
-                  <div className="flex items-center gap-2">
-                    <Input
-                      type="file"
-                      accept={headerMediaAccept(headerType)}
-                      disabled={isUploadingHeaderMedia}
-                      className="bg-zinc-950/40 border-white/10 text-white"
-                      onChange={(e) => {
-                        const file = e.currentTarget.files?.[0]
-                        // Permite selecionar o mesmo arquivo novamente
-                        e.currentTarget.value = ''
-                        if (!file) return
-                        // Preview local (como a Meta faz). O header_handle não é um URL renderizável.
-                        const format = headerType as HeaderFormat
-                        try {
-                          const url = URL.createObjectURL(file)
-                          setHeaderMediaPreview({
-                            url,
-                            format,
-                            name: file.name,
-                            mimeType: file.type || '',
-                            size: file.size,
-                          })
-                        } catch {
-                          // Ignore: preview é opcional.
-                        }
-                        void uploadHeaderMedia(file)
-                      }}
-                    />
-                    {isUploadingHeaderMedia ? (
-                      <div className="inline-flex items-center gap-2 text-xs text-gray-300 px-2">
-                        <Loader2 className="w-4 h-4 animate-spin" />
-                        Enviando...
+                    <div className="flex items-center gap-2">
+                      {isUploadingHeaderMedia ? (
+                        <span className="inline-flex items-center gap-1.5 rounded-full border border-white/10 bg-zinc-950/40 px-2 py-1 text-[11px] text-gray-200">
+                          <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                          Enviando…
+                        </span>
+                      ) : headerMediaHandleValue ? (
+                        <span className="inline-flex items-center gap-1.5 rounded-full border border-emerald-400/30 bg-emerald-500/10 px-2 py-1 text-[11px] text-emerald-200">
+                          <CheckCircle2 className="w-3.5 h-3.5" />
+                          Pronto
+                        </span>
+                      ) : null}
+                    </div>
+                  </div>
+
+                  {/* input escondido (fica mais “app-like”) */}
+                  <input
+                    ref={headerMediaFileInputRef}
+                    type="file"
+                    accept={headerMediaAccept(headerType)}
+                    className="hidden"
+                    onChange={(e) => {
+                      const file = e.currentTarget.files?.[0]
+                      // Permite selecionar o mesmo arquivo novamente
+                      e.currentTarget.value = ''
+                      if (!file) return
+
+                      // Preview local (como a Meta faz). O handle não é um link renderizável.
+                      const format = headerType as HeaderFormat
+                      try {
+                        const url = URL.createObjectURL(file)
+                        setHeaderMediaPreview({
+                          url,
+                          format,
+                          name: file.name,
+                          mimeType: file.type || '',
+                          size: file.size,
+                        })
+                      } catch {
+                        // Ignore: preview é opcional.
+                      }
+
+                      void uploadHeaderMedia(file)
+                    }}
+                  />
+
+                  <div className="rounded-xl border border-white/10 bg-zinc-950/40 p-3 flex items-center justify-between gap-3">
+                    <div className="min-w-0">
+                      <div className="text-sm font-medium text-white truncate">
+                        {headerMediaPreview?.name || 'Escolha um arquivo'}
                       </div>
-                    ) : null}
+                      <div className="mt-0.5 text-xs text-gray-400">
+                        {headerMediaPreview ? (
+                          `${formatBytes(headerMediaPreview.size)} • ${String(headerType).toLowerCase()}`
+                        ) : (
+                          'Ele vai aparecer na prévia à direita.'
+                        )}
+                      </div>
+                    </div>
+
+                    <div className="flex items-center gap-2">
+                      <Button
+                        type="button"
+                        variant={headerMediaPreview ? 'outline' : 'default'}
+                        disabled={isUploadingHeaderMedia}
+                        className={cn(
+                          headerMediaPreview
+                            ? 'border-white/10 bg-zinc-950/40 hover:bg-white/5'
+                            : 'bg-emerald-500 hover:bg-emerald-400 text-black',
+                        )}
+                        onClick={() => headerMediaFileInputRef.current?.click()}
+                      >
+                        <Upload className="w-4 h-4" />
+                        {headerMediaPreview ? 'Trocar' : 'Escolher'}
+                      </Button>
+
+                      {headerMediaPreview ? (
+                        <Button
+                          type="button"
+                          variant="ghost"
+                          disabled={isUploadingHeaderMedia}
+                          className="text-gray-300 hover:bg-white/5"
+                          onClick={() => {
+                            setHeaderMediaPreview(null)
+                            updateHeader({
+                              ...header,
+                              format: headerType as HeaderFormat,
+                              example: {
+                                ...(header?.example || {}),
+                                header_handle: [''],
+                              },
+                            })
+                          }}
+                        >
+                          <Trash2 className="w-4 h-4" />
+                          Remover
+                        </Button>
+                      ) : null}
+                    </div>
                   </div>
 
                   {uploadHeaderMediaError ? (
                     <p className="text-xs text-amber-300">{uploadHeaderMediaError}</p>
                   ) : null}
 
-                  <div className="pt-1 space-y-2">
-                    <label className="text-xs font-medium text-gray-300">header_handle (mídia)</label>
-                    <Input
-                      value={header?.example?.header_handle?.[0] || ''}
-                      onChange={(e) => updateHeader({ ...header, example: { ...(header.example || {}), header_handle: [e.target.value] } })}
-                      className="bg-zinc-950/40 border-white/10 text-white"
-                      placeholder="Preenchido automaticamente após o upload (ou cole manualmente)"
-                      disabled={isUploadingHeaderMedia}
-                    />
-                    {isHeaderMediaHandleMissing ? (
-                      <p className="text-xs text-amber-300">
-                        Cabeçalho de mídia exige <span className="font-mono">header_handle</span>.
-                      </p>
-                    ) : null}
-                    <p className="text-xs text-gray-500">
-                      O <span className="font-mono">header_handle</span> é gerado via Resumable Upload (Graph API). Se preferir, você ainda pode colar manualmente.
+                  {isHeaderMediaHandleMissing ? (
+                    <p className="text-xs text-amber-300">
+                      {headerMediaPreview ? 'Finalize o envio da mídia para continuar.' : 'Selecione um arquivo para o cabeçalho.'}
                     </p>
-                  </div>
+                  ) : null}
                 </div>
               ) : null}
             </div>
@@ -2341,6 +2408,22 @@ export function ManualTemplateBuilder({
             </summary>
 
             <div className="mt-4">
+              {canShowMediaSample ? (
+                <div className="mb-4 space-y-2">
+                  <div className="text-xs font-medium text-gray-300">Mídia do cabeçalho (opcional)</div>
+                  <div className="text-xs text-gray-500">
+                    Se você precisar, pode colar manualmente o identificador de mídia usado como exemplo no template.
+                  </div>
+                  <Input
+                    value={header?.example?.header_handle?.[0] || ''}
+                    onChange={(e) => updateHeader({ ...header, example: { ...(header?.example || {}), header_handle: [e.target.value] } })}
+                    className="bg-zinc-950/40 border-white/10 text-white"
+                    placeholder="Identificador (handle)"
+                    disabled={isUploadingHeaderMedia}
+                  />
+                </div>
+              ) : null}
+
               <button
                 type="button"
                 onClick={() => setShowDebug((v) => !v)}

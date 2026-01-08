@@ -706,14 +706,46 @@ export const { POST } = serve<CampaignWorkflowInput>(
 
             // Claim foi feito em bulk no início do batch.
 
-            const whatsappPayload: any = buildMetaTemplatePayload({
-              to: precheck.normalizedPhone,
-              templateName,
-              language: (template as any).language || 'pt_BR',
-              parameterFormat: (template as any).parameter_format || (template as any).parameterFormat || 'positional',
-              values: precheck.values,
-              template: template as any,
-            })
+            let whatsappPayload: any
+            try {
+              whatsappPayload = buildMetaTemplatePayload({
+                to: precheck.normalizedPhone,
+                templateName,
+                language: (template as any).language || 'pt_BR',
+                parameterFormat: (template as any).parameter_format || (template as any).parameterFormat || 'positional',
+                values: precheck.values,
+                template: template as any,
+              })
+            } catch (e) {
+              const reason = e instanceof Error ? e.message : String(e)
+              pushWriteOp({
+                contact,
+                status: 'skipped',
+                opts: {
+                  sendingAt: sendingAtIso,
+                  skipCode: 'UNSUPPORTED_TEMPLATE_FEATURE',
+                  skipReason: reason,
+                  traceId,
+                },
+              })
+
+              await emitWorkflowTrace({
+                traceId,
+                campaignId,
+                step,
+                batchIndex,
+                contactId: contact.contactId,
+                phoneMasked,
+                phase: 'payload_build_skip',
+                ok: true,
+                extra: { reason },
+              })
+
+              skippedCount++
+              progress.bump({ skipped: 1 })
+              console.log(`⏭️ Skipped (payload build) ${contact.phone}: ${reason}`)
+              return
+            }
 
             if (process.env.DEBUG_META_PAYLOAD === '1') {
               console.log('--- META API PAYLOAD (CONTRACT) ---', JSON.stringify(whatsappPayload, null, 2))

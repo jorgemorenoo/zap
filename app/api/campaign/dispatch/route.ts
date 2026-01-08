@@ -12,6 +12,7 @@ import { fetchWithTimeout, safeJson } from '@/lib/server-http'
 
 import { CampaignStatus, ContactStatus } from '@/types'
 import { unauthorizedResponse, verifyApiKey } from '@/lib/auth'
+import { createHash } from 'crypto'
 
 interface DispatchContact {
   contactId?: string
@@ -65,6 +66,98 @@ function dedupeBy<T>(items: T[], keyFn: (x: T) => string): T[] {
     out.push(it)
   }
   return out
+}
+
+function isHttpUrl(value: string): boolean {
+  const v = String(value || '').trim()
+  return /^https?:\/\//i.test(v)
+}
+
+function getTemplateHeaderMediaExampleLink(template: any): { format?: string; example?: string } {
+  const components = (template as any)?.components
+  if (!Array.isArray(components)) return {}
+  const header = components.find((c: any) => String(c?.type || '').toUpperCase() === 'HEADER') as any | undefined
+  if (!header) return {}
+
+  const format = header?.format ? String(header.format).toUpperCase() : undefined
+  if (!format || !['IMAGE', 'VIDEO', 'DOCUMENT', 'GIF'].includes(format)) return { format }
+
+  let exampleObj: any = header.example
+  if (typeof header.example === 'string') {
+    try {
+      exampleObj = JSON.parse(header.example)
+    } catch {
+      exampleObj = undefined
+    }
+  }
+
+  const arr = exampleObj?.header_handle
+  const example = Array.isArray(arr) && typeof arr[0] === 'string' ? String(arr[0]).trim() : undefined
+  return { format, example }
+}
+
+async function fetchSingleTemplateFromMeta(params: {
+  businessAccountId: string
+  accessToken: string
+  templateName: string
+}): Promise<
+  | {
+      name: string
+      language?: string
+      category?: string
+      status?: string
+      components?: unknown
+      parameter_format?: 'positional' | 'named' | string
+      spec_hash?: string | null
+      fetched_at?: string | null
+    }
+  | null
+> {
+  const { businessAccountId, accessToken, templateName } = params
+  const now = new Date().toISOString()
+
+  const url = new URL(`https://graph.facebook.com/v24.0/${businessAccountId}/message_templates`)
+  url.searchParams.set('name', templateName)
+  // Campos usados no cache local (o payload de envio depende de components.example.header_handle)
+  url.searchParams.set('fields', 'name,language,category,status,components,parameter_format,last_updated_time')
+
+  const res = await fetchWithTimeout(url.toString(), {
+    method: 'GET',
+    headers: {
+      Authorization: `Bearer ${accessToken}`,
+    },
+    timeoutMs: 20_000,
+  })
+
+  const json = (await safeJson<any>(res)) || {}
+  const first = Array.isArray(json?.data) ? json.data[0] : null
+  if (!res.ok || !first?.name) return null
+
+  const parameterFormat = (() => {
+    const pf = String(first.parameter_format || '').toLowerCase()
+    return pf === 'named' ? 'named' : 'positional'
+  })()
+
+  const specPayload = {
+    name: String(first.name),
+    language: String(first.language || 'pt_BR'),
+    category: String(first.category || ''),
+    parameter_format: parameterFormat,
+    components: first.components || [],
+  }
+
+  const specHash = createHash('sha256').update(JSON.stringify(specPayload)).digest('hex')
+
+  return {
+    name: String(first.name),
+    language: String(first.language || 'pt_BR'),
+    category: first.category ? String(first.category) : undefined,
+    status: first.status ? String(first.status) : undefined,
+    components: first.components || [],
+    parameter_format: parameterFormat,
+    spec_hash: specHash,
+    fetched_at: now,
+  }
 }
 
 // Generate simple ID
@@ -187,12 +280,55 @@ export async function POST(request: NextRequest) {
   }
 
   // Fetch template from local DB cache (source operacional). Documented-only: sem template, sem envio.
-  const template = await templateDb.getByName(templateName)
+  let template = await templateDb.getByName(templateName)
   if (!template) {
     return NextResponse.json(
       { error: 'Template não encontrado no banco local. Sincronize Templates antes de disparar.' },
       { status: 400 }
     )
+  }
+
+  // Se o template tem HEADER de mídia, o envio precisa do "link" (URL) da mídia do template.
+  // Alguns registros locais (ex.: recém-criados via builder) podem ter apenas handle "4::...".
+  // Estratégia: fazer um refresh pontual na Meta para obter o exemplo completo (geralmente URL) e atualizar o cache.
+  const headerInfo0 = getTemplateHeaderMediaExampleLink(template)
+  if (headerInfo0.format && ['IMAGE', 'VIDEO', 'DOCUMENT', 'GIF'].includes(headerInfo0.format)) {
+    const example0 = headerInfo0.example
+    if (!example0 || !isHttpUrl(example0)) {
+      try {
+        const creds = await getWhatsAppCredentials()
+        if (creds?.businessAccountId && creds?.accessToken) {
+          const refreshed = await fetchSingleTemplateFromMeta({
+            businessAccountId: creds.businessAccountId,
+            accessToken: creds.accessToken,
+            templateName,
+          })
+          if (refreshed) {
+            await templateDb.upsert([refreshed])
+            template = await templateDb.getByName(templateName)
+          }
+        }
+      } catch (e) {
+        console.warn('[Dispatch] Falha ao fazer refresh do template na Meta (best-effort):', e)
+      }
+
+      const headerInfo1 = getTemplateHeaderMediaExampleLink(template)
+      if (!headerInfo1.example || !isHttpUrl(headerInfo1.example)) {
+        return NextResponse.json(
+          {
+            error:
+              `O template "${templateName}" possui HEADER ${headerInfo0.format}, mas o cache local não tem URL de mídia para envio.`,
+            action:
+              'Sincronize Templates (Meta → local) e tente novamente. Se o template ainda está em revisão, aguarde aprovação antes de disparar.',
+            details: {
+              headerFormat: headerInfo0.format,
+              examplePreview: headerInfo1.example || headerInfo0.example || null,
+            },
+          },
+          { status: 400 }
+        )
+      }
+    }
   }
 
   // Snapshot do template na campanha (fonte operacional por campanha)
@@ -325,15 +461,40 @@ export async function POST(request: NextRequest) {
     }
   }
 
+  // 2.5) Higienização defensiva: evita IDs/phones "truthy" porém vazios (ex.: "   ")
+  for (const c of dedupedInput) {
+    if (typeof (c as any).contactId === 'string') {
+      const trimmed = String((c as any).contactId).trim()
+      ;(c as any).contactId = trimmed.length ? trimmed : undefined
+    }
+    if (typeof (c as any).phone === 'string') {
+      ;(c as any).phone = String((c as any).phone).trim()
+    }
+  }
+
   // 3) Se ainda houver contato sem ID, bloqueia para evitar dados inconsistentes.
   //    (Isso elimina definitivamente o caminho "sem contactId" no workflow.)
-  const stillMissing = dedupedInput.filter((c) => !c.contactId)
+  const stillMissing = dedupedInput.filter((c) => !String(c.contactId || '').trim())
   if (stillMissing.length > 0) {
     return NextResponse.json(
       {
         error: 'Alguns contatos não possuem contactId (não é possível disparar com segurança).',
         missing: stillMissing.map((c) => ({ phone: c.phone, name: c.name || '' })),
         action: 'Recarregue a lista de contatos e tente novamente. Se o contato foi removido, remova-o da campanha.'
+      },
+      { status: 400 }
+    )
+  }
+
+  // 3.1) Se houver telefone ausente, bloqueia para evitar violação NOT NULL em campaign_contacts.
+  //      Isso indica dados corrompidos (contato sem phone) e precisa ser corrigido na origem.
+  const stillMissingPhone = dedupedInput.filter((c) => !String((c as any)?.phone || '').trim())
+  if (stillMissingPhone.length > 0) {
+    return NextResponse.json(
+      {
+        error: 'Alguns contatos estão sem telefone (phone). Corrija os contatos antes de disparar.',
+        missing: stillMissingPhone.map((c) => ({ contactId: c.contactId, name: c.name || '', phone: c.phone })),
+        action: 'Abra o contato e salve novamente com um telefone válido.'
       },
       { status: 400 }
     )
@@ -501,10 +662,11 @@ export async function POST(request: NextRequest) {
     }
     const rowsPending = validContacts
       .filter((c) => !lockedContactIds.has(String(c.contactId)))
+      .filter((c) => String(c.phone || '').trim().length > 0)
       .map(c => ({
       campaign_id: campaignId,
       contact_id: c.contactId || null,
-      phone: c.phone,
+      phone: String(c.phone).trim(),
       name: c.name || '',
       email: c.email || null,
       custom_fields: c.custom_fields || {},
@@ -521,7 +683,8 @@ export async function POST(request: NextRequest) {
       .map(({ contact, code, reason, normalizedPhone }) => ({
       campaign_id: campaignId,
       contact_id: contact.contactId || null,
-      phone: normalizedPhone || contact.phone,
+      // Nunca permitir null/undefined: campaign_contacts.phone é NOT NULL.
+      phone: String(normalizedPhone || (contact as any).phone || '').trim() || normalizePhoneNumber(String((contact as any).phone || '')),
       name: contact.name || '',
       email: contact.email || null,
       custom_fields: contact.custom_fields || {},

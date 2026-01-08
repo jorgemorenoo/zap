@@ -1198,7 +1198,7 @@ export const campaignContactDb = {
 const normalizeTemplateFormat = (format: unknown): TemplateComponent['format'] | undefined => {
     if (typeof format !== 'string') return undefined
     const normalized = format.toUpperCase()
-    if (normalized === 'TEXT' || normalized === 'IMAGE' || normalized === 'VIDEO' || normalized === 'DOCUMENT') {
+    if (normalized === 'TEXT' || normalized === 'IMAGE' || normalized === 'VIDEO' || normalized === 'DOCUMENT' || normalized === 'GIF') {
         return normalized as TemplateComponent['format']
     }
     return undefined

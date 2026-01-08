@@ -528,7 +528,60 @@ export function buildMetaTemplatePayload(input: {
     },
   }
 
-  if (values.header?.length) {
+  const headerComponent = (template?.components || []).find(
+    (c: any) => String(c?.type || '').toUpperCase() === 'HEADER'
+  ) as any | undefined
+  const headerFormat = headerComponent?.format ? String(headerComponent.format).toUpperCase() : undefined
+  const headerIsMedia = headerFormat && ['IMAGE', 'VIDEO', 'DOCUMENT', 'GIF'].includes(headerFormat)
+
+  const extractHeaderExampleLink = (): string | undefined => {
+    const example = headerComponent?.example
+    if (!example) return undefined
+
+    let obj: any = example
+    if (typeof example === 'string') {
+      try {
+        obj = JSON.parse(example)
+      } catch {
+        obj = undefined
+      }
+    }
+
+    const handle = obj?.header_handle
+    if (Array.isArray(handle) && typeof handle[0] === 'string') {
+      const v = handle[0].trim()
+      return v.length ? v : undefined
+    }
+    return undefined
+  }
+
+  // HEADER: se for mídia, precisamos incluir parâmetro de mídia.
+  // Se não houver fonte (link/id), é melhor falhar de forma explícita do que enviar payload inválido
+  // e estourar erro na Meta (#132012 expected IMAGE received UNKNOWN).
+  if (headerIsMedia) {
+    const exampleLink = extractHeaderExampleLink()
+    if (!exampleLink || !/^https?:\/\//i.test(exampleLink)) {
+      throw new Error(
+        `Template "${templateName}" possui HEADER ${headerFormat}, mas não há mídia configurada para envio. ` +
+          'Dica: sincronize os templates (para obter URL de exemplo) ou implemente suporte a mídia de header no disparo.'
+      )
+    }
+
+    const mediaParamType = headerFormat === 'IMAGE' ? 'image' : headerFormat === 'DOCUMENT' ? 'document' : 'video'
+    const mediaKey = mediaParamType
+    payload.template.components.push({
+      type: 'header',
+      parameters: [
+        {
+          type: mediaParamType,
+          [mediaKey]: { link: exampleLink },
+        },
+      ],
+    })
+  }
+
+  // HEADER de texto (apenas se o template NÃO for header de mídia)
+  if (!headerIsMedia && values.header?.length) {
     payload.template.components.push({
       type: 'header',
       parameters: values.header.map((p) =>
