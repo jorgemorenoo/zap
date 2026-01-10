@@ -79,7 +79,7 @@ export class TemplateService {
     }
 
     /**
-     * Calls the AI Agent API to generate utility templates
+     * Calls the AI API to generate utility templates
      */
     async generateUtilityTemplates(params: {
         prompt: string;

@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { Bot, Save, Key, CheckCircle, ExternalLink, RefreshCw, ChevronDown } from 'lucide-react';
 import { toast } from 'sonner';
 import { AI_PROVIDERS, type AIProvider, type AIProviderConfig } from '@/lib/ai/providers';
+import type { AiFallbackConfig, AiPromptsConfig, AiRoutesConfig } from '@/lib/ai/ai-center-defaults';
 
 interface ProviderStatus {
     isConfigured: boolean;
@@ -23,7 +24,15 @@ interface AISettingsProps {
         };
     } | undefined;
     isLoading: boolean;
-    onSave: (data: { apiKey?: string; provider?: string; model?: string }) => Promise<void>;
+    onSave: (data: {
+        apiKey?: string;
+        apiKeyProvider?: string;
+        provider?: string;
+        model?: string;
+        routes?: AiRoutesConfig;
+        prompts?: AiPromptsConfig;
+        fallback?: AiFallbackConfig;
+    }) => Promise<void>;
     onRemoveKey?: (provider: AIProvider) => Promise<void>;
     isSaving: boolean;
 }

@@ -52,6 +52,29 @@ const splitPlaceholders = (text: string) => {
   return text.split(/(\{\{[^}]+\}\})/g).filter(Boolean)
 }
 
+const isHttpUrl = (value: string) => /^https?:\/\//i.test(String(value || '').trim())
+
+const getHeaderExampleUrl = (components?: TemplateComponent[]): string | null => {
+  if (!Array.isArray(components)) return null
+  const header = components.find((c) => c.type === 'HEADER')
+  if (!header) return null
+  const format = header.format ? String(header.format).toUpperCase() : ''
+  if (!['IMAGE', 'VIDEO', 'DOCUMENT', 'GIF'].includes(format)) return null
+
+  let exampleObj: any = header.example
+  if (typeof exampleObj === 'string') {
+    try {
+      exampleObj = JSON.parse(exampleObj)
+    } catch {
+      exampleObj = undefined
+    }
+  }
+  const arr = exampleObj?.header_handle
+  const candidate = Array.isArray(arr) ? arr.find((item: any) => typeof item === 'string' && item.trim()) : null
+  if (!candidate) return null
+  return isHttpUrl(candidate) ? String(candidate).trim() : null
+}
+
 const OTP_OPEN = '[[OTP]]'
 const OTP_CLOSE = '[[/OTP]]'
 
@@ -310,11 +333,13 @@ export const TemplatePreviewCard: React.FC<TemplatePreviewCardProps> = ({
 
   const headerFormat = header?.format ? String(header.format).toUpperCase() : undefined
   const headerText = headerFormat === 'TEXT' ? header?.text : undefined
+  const headerExampleUrl = getHeaderExampleUrl(components)
+  const resolvedHeaderMediaPreviewUrl = headerMediaPreviewUrl || headerExampleUrl || null
   const showHeaderMedia =
-    Boolean(headerMediaPreviewUrl) &&
+    Boolean(resolvedHeaderMediaPreviewUrl) &&
     Boolean(headerFormat && ['IMAGE', 'VIDEO', 'DOCUMENT', 'GIF'].includes(headerFormat))
   const showHeaderPlaceholder =
-    !headerMediaPreviewUrl && Boolean(headerFormat && ['IMAGE', 'VIDEO', 'DOCUMENT', 'GIF'].includes(headerFormat))
+    !resolvedHeaderMediaPreviewUrl && Boolean(headerFormat && ['IMAGE', 'VIDEO', 'DOCUMENT', 'GIF'].includes(headerFormat))
   const bodyText = body?.text || fallbackContent || ''
   const footerText = footer?.text || ''
 
@@ -338,7 +363,7 @@ export const TemplatePreviewCard: React.FC<TemplatePreviewCardProps> = ({
         <div className="mb-5 overflow-hidden rounded-xl border border-white/10 bg-white/5">
           {headerFormat === 'DOCUMENT' ? (
             <a
-              href={headerMediaPreviewUrl || '#'}
+              href={resolvedHeaderMediaPreviewUrl || '#'}
               target="_blank"
               rel="noreferrer"
               className="block px-4 py-3 text-xs font-semibold text-primary-200 hover:text-primary-100"
@@ -347,7 +372,7 @@ export const TemplatePreviewCard: React.FC<TemplatePreviewCardProps> = ({
             </a>
           ) : headerFormat === 'VIDEO' || headerFormat === 'GIF' ? (
             <video
-              src={headerMediaPreviewUrl || undefined}
+              src={resolvedHeaderMediaPreviewUrl || undefined}
               className="w-full h-auto"
               muted
               controls
@@ -355,7 +380,7 @@ export const TemplatePreviewCard: React.FC<TemplatePreviewCardProps> = ({
             />
           ) : (
             <img
-              src={headerMediaPreviewUrl || undefined}
+              src={resolvedHeaderMediaPreviewUrl || undefined}
               alt="Prévia da mídia do cabeçalho"
               className="w-full h-auto"
               loading="lazy"

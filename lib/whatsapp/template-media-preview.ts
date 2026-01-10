@@ -79,6 +79,55 @@ function allowedMimeTypesForFormat(format?: string): string[] {
   return []
 }
 
+async function probeExampleUrl(
+  url: string,
+  timeoutMs: number
+): Promise<{ status: number; contentType?: string; contentLength?: number }> {
+  const controller = new AbortController()
+  const timeout = setTimeout(() => controller.abort(), timeoutMs)
+
+  const fetchHead = async () => {
+    const res = await fetch(url, { method: 'HEAD', signal: controller.signal })
+    const contentType = res.headers.get('content-type') || undefined
+    const lengthHeader = res.headers.get('content-length')
+    const contentLength = lengthHeader ? Number(lengthHeader) : undefined
+    return { status: res.status, contentType, contentLength, res }
+  }
+
+  const fetchRange = async () => {
+    const res = await fetch(url, {
+      method: 'GET',
+      headers: { Range: 'bytes=0-0' },
+      signal: controller.signal,
+    })
+    const contentType = res.headers.get('content-type') || undefined
+    const lengthHeader = res.headers.get('content-length')
+    const contentLength = lengthHeader ? Number(lengthHeader) : undefined
+    try {
+      res.body?.cancel()
+    } catch {
+      // best-effort
+    }
+    return { status: res.status, contentType, contentLength, res }
+  }
+
+  try {
+    const head = await fetchHead()
+    if (head.status >= 200 && head.status < 300) {
+      return { status: head.status, contentType: head.contentType, contentLength: head.contentLength }
+    }
+    if (head.status === 405 || head.status === 501) {
+      const ranged = await fetchRange()
+      return { status: ranged.status, contentType: ranged.contentType, contentLength: ranged.contentLength }
+    }
+    return { status: head.status, contentType: head.contentType, contentLength: head.contentLength }
+  } catch {
+    return { status: 0 }
+  } finally {
+    clearTimeout(timeout)
+  }
+}
+
 async function tryDownloadBinary(url: string, accessToken?: string): Promise<{
   ok: boolean
   status: number
@@ -179,6 +228,39 @@ export async function ensureHeaderMediaPreviewUrl(params: EnsureHeaderMediaPrevi
     }
   } catch (e) {
     warn(logger, '[TemplatePreview] Falha ao ler cache do Supabase.', { templateName })
+  }
+
+  const exampleProbeTimeoutMs = Number(process.env.MEDIA_EXAMPLE_PROBE_TIMEOUT_MS || '3000')
+  const exampleTtlSeconds = Number(process.env.MEDIA_EXAMPLE_URL_TTL_SECONDS || String(6 * 60 * 60))
+  const exampleProbe = await probeExampleUrl(example, exampleProbeTimeoutMs)
+  if (exampleProbe.status >= 200 && exampleProbe.status < 300) {
+    const allowed = allowedMimeTypesForFormat(format)
+    const contentType = exampleProbe.contentType
+    const contentLength = exampleProbe.contentLength
+    const maxBytes = maxBytesForFormat(format)
+    const typeOk = !contentType || allowed.length === 0 || allowed.includes(contentType)
+    const sizeOk = !contentLength || contentLength <= maxBytes
+    if (typeOk && sizeOk) {
+      const expiresAt = new Date(Date.now() + Math.max(300, exampleTtlSeconds) * 1000).toISOString()
+      const finalUrl = example
+
+      try {
+        await client
+          .from('templates')
+          .update({
+            header_media_preview_url: finalUrl,
+            header_media_preview_expires_at: expiresAt,
+            header_media_hash: exampleHash,
+            header_media_preview_updated_at: nowIso,
+            updated_at: nowIso,
+          })
+          .eq('name', templateName)
+      } catch (e) {
+        warn(logger, '[TemplatePreview] Falha ao persistir preview.', { templateName })
+      }
+
+      return { url: finalUrl, expiresAt, mode: 'public', source: 'generated' }
+    }
   }
 
   const downloaded = await tryDownloadBinary(example, accessToken)

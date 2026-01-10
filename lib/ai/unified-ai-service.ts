@@ -18,6 +18,7 @@ import { createAnthropic } from '@ai-sdk/anthropic';
 
 import { supabase } from '@/lib/supabase';
 import { type AIProvider, getDefaultModel } from './providers';
+import { getAiFallbackConfig } from './ai-center-config';
 
 // =============================================================================
 // TYPES
@@ -27,6 +28,7 @@ export interface AISettings {
     provider: AIProvider;
     model: string;
     apiKey: string;
+    providerKeys?: Partial<Record<AIProvider, string>>;
 }
 
 export interface ChatMessage {
@@ -85,6 +87,11 @@ async function getAISettings(): Promise<AISettings> {
         provider: 'google',
         model: 'gemini-2.5-flash',
         apiKey: process.env.GOOGLE_GENERATIVE_AI_API_KEY || process.env.GEMINI_API_KEY || '',
+        providerKeys: {
+            google: process.env.GOOGLE_GENERATIVE_AI_API_KEY || process.env.GEMINI_API_KEY || '',
+            openai: process.env.OPENAI_API_KEY || '',
+            anthropic: process.env.ANTHROPIC_API_KEY || '',
+        },
     };
 
     try {
@@ -106,21 +113,15 @@ async function getAISettings(): Promise<AISettings> {
             const provider = (settingsMap.get('ai_provider') as AIProvider) || defaultSettings.provider;
             const model = settingsMap.get('ai_model') || getDefaultModel(provider)?.id || '';
 
-            // Get the right API key for the provider
-            let apiKey = '';
-            switch (provider) {
-                case 'google':
-                    apiKey = settingsMap.get('gemini_api_key') || process.env.GOOGLE_GENERATIVE_AI_API_KEY || process.env.GEMINI_API_KEY || '';
-                    break;
-                case 'openai':
-                    apiKey = settingsMap.get('openai_api_key') || process.env.OPENAI_API_KEY || '';
-                    break;
-                case 'anthropic':
-                    apiKey = settingsMap.get('anthropic_api_key') || process.env.ANTHROPIC_API_KEY || '';
-                    break;
-            }
+            const providerKeys: AISettings['providerKeys'] = {
+                google: settingsMap.get('gemini_api_key') || process.env.GOOGLE_GENERATIVE_AI_API_KEY || process.env.GEMINI_API_KEY || '',
+                openai: settingsMap.get('openai_api_key') || process.env.OPENAI_API_KEY || '',
+                anthropic: settingsMap.get('anthropic_api_key') || process.env.ANTHROPIC_API_KEY || '',
+            };
 
-            settingsCache = { provider, model, apiKey };
+            const apiKey = providerKeys[provider] || '';
+
+            settingsCache = { provider, model, apiKey, providerKeys };
         } else {
             settingsCache = defaultSettings;
         }
@@ -192,27 +193,47 @@ export async function generateText(options: GenerateTextOptions): Promise<Genera
     const providerId = options.provider || settings.provider;
     const modelId = options.model || settings.model;
 
-    const model = getLanguageModel(providerId, modelId, settings.apiKey);
+    const runGeneration = async (provider: AIProvider, modelIdOverride: string, apiKey: string) => {
+        const model = getLanguageModel(provider, modelIdOverride, apiKey);
 
-    console.log(`[AI Service] Generating with ${providerId}/${modelId}`);
+        console.log(`[AI Service] Generating with ${provider}/${modelIdOverride}`);
 
-    // Build call options based on prompt vs messages
-    const baseOptions = {
-        model,
-        system: options.system,
-        temperature: options.temperature ?? 0.7,
-        ...(options.maxOutputTokens && { maxOutputTokens: options.maxOutputTokens }),
+        const baseOptions = {
+            model,
+            system: options.system,
+            temperature: options.temperature ?? 0.7,
+            ...(options.maxOutputTokens && { maxOutputTokens: options.maxOutputTokens }),
+        };
+
+        return options.messages
+            ? vercelGenerateText({ ...baseOptions, messages: options.messages })
+            : vercelGenerateText({ ...baseOptions, prompt: options.prompt || '' });
     };
 
-    const result = options.messages
-        ? await vercelGenerateText({ ...baseOptions, messages: options.messages })
-        : await vercelGenerateText({ ...baseOptions, prompt: options.prompt || '' });
+    try {
+        const result = await runGeneration(providerId, modelId, settings.apiKey);
+        return {
+            text: result.text,
+            provider: providerId,
+            model: modelId,
+        };
+    } catch (error) {
+        const fallback = await getAiFallbackConfig();
+        const fallbackKey = settings.providerKeys?.[fallback.provider] || '';
 
-    return {
-        text: result.text,
-        provider: providerId,
-        model: modelId,
-    };
+        if (!fallback.enabled || !fallbackKey || (fallback.provider === providerId && fallback.model === modelId)) {
+            throw error;
+        }
+
+        console.warn(`[AI Service] Primary failed, falling back to ${fallback.provider}/${fallback.model}`);
+
+        const fallbackResult = await runGeneration(fallback.provider, fallback.model, fallbackKey);
+        return {
+            text: fallbackResult.text,
+            provider: fallback.provider,
+            model: fallback.model,
+        };
+    }
 }
 
 /**

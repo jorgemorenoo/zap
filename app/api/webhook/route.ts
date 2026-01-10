@@ -235,6 +235,14 @@ function isMissingColumnError(e: unknown, columnName: string): boolean {
   return msg.toLowerCase().includes('column') && msg.toLowerCase().includes(columnName.toLowerCase())
 }
 
+function extractCampaignIdFromFlowToken(flowToken: string | null): string | null {
+  if (!flowToken) return null
+  const match = flowToken.match(/:c:([A-Za-z0-9_-]+)/)
+  if (!match) return null
+  const value = match[1]?.trim()
+  return value ? value : null
+}
+
 function isMissingTableError(e: unknown, tableName: string): boolean {
   const code = String((e as any)?.code || '')
   const msg = String((e as any)?.message || (e instanceof Error ? e.message : e || ''))
@@ -762,6 +770,7 @@ export async function POST(request: NextRequest) {
               const flowId = (nfm?.flow_id || nfm?.flowId || null) as string | null
               const flowName = (nfm?.name || null) as string | null
               const flowToken = (nfm?.flow_token || nfm?.flowToken || null) as string | null
+              const campaignId = extractCampaignIdFromFlowToken(flowToken)
 
               // Best-effort: mapping para campos do SmartZap
               let flowLocalId: string | null = null
@@ -809,6 +818,7 @@ export async function POST(request: NextRequest) {
                         flow_id: flowId,
                         flow_name: flowName,
                         flow_token: flowToken,
+                        ...(campaignId ? { campaign_id: campaignId } : {}),
                         response_json_raw: responseRaw,
                         response_json: responseJson,
                         waba_id: wabaId,
@@ -826,7 +836,12 @@ export async function POST(request: NextRequest) {
                 }
 
                 // Fallback: bancos sem migração ainda (evita 500 e mantém captura)
-                if (upsertError && (isMissingColumnError(upsertError, 'flow_local_id') || isMissingColumnError(upsertError, 'mapped_data'))) {
+                if (
+                  upsertError &&
+                  (isMissingColumnError(upsertError, 'flow_local_id') ||
+                    isMissingColumnError(upsertError, 'mapped_data') ||
+                    isMissingColumnError(upsertError, 'campaign_id'))
+                ) {
                   try {
                     const { error } = await supabase
                       .from('flow_submissions')

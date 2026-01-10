@@ -1,11 +1,12 @@
-import React, { useEffect, useMemo, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import Link from 'next/link';
-import { AlertTriangle, HelpCircle, Save, RefreshCw, Wifi, Edit2, Shield, AlertCircle, UserCheck, Smartphone, X, Copy, Check, ExternalLink, Webhook, Clock, Phone, Trash2, Loader2, ChevronDown, ChevronUp, Zap, ArrowDown, CheckCircle2, Circle, Lock, MessageSquare } from 'lucide-react';
+import { AlertTriangle, Calendar, HelpCircle, Save, RefreshCw, Wifi, Edit2, Shield, AlertCircle, UserCheck, Smartphone, X, Copy, Check, ExternalLink, Webhook, Clock, Phone, Trash2, Loader2, ChevronDown, ChevronUp, Zap, ArrowDown, CheckCircle2, Circle, Lock, MessageSquare } from 'lucide-react';
 import { toast } from 'sonner';
-import { AppSettings } from '../../../types';
+import { AppSettings, CalendarBookingConfig } from '../../../types';
 import { AccountLimits } from '../../../lib/meta-limits';
 import { PhoneNumber } from '../../../hooks/useSettings';
 import { AISettings } from './AISettings';
+import type { AiFallbackConfig, AiPromptsConfig, AiRoutesConfig } from '../../../lib/ai/ai-center-defaults';
 import { formatPhoneNumberDisplay } from '../../../lib/phone-formatter';
 import { performanceService } from '../../../services/performanceService';
 
@@ -21,6 +22,31 @@ interface DomainOption {
   source: string;
   recommended: boolean;
 }
+
+const CALENDAR_BOOKING_FALLBACK: CalendarBookingConfig = {
+  timezone: 'America/Sao_Paulo',
+  slotDurationMinutes: 30,
+  slotBufferMinutes: 10,
+  workingHours: [
+    { day: 'mon', enabled: true, start: '09:00', end: '18:00' },
+    { day: 'tue', enabled: true, start: '09:00', end: '18:00' },
+    { day: 'wed', enabled: true, start: '09:00', end: '18:00' },
+    { day: 'thu', enabled: true, start: '09:00', end: '18:00' },
+    { day: 'fri', enabled: true, start: '09:00', end: '18:00' },
+    { day: 'sat', enabled: false, start: '09:00', end: '13:00' },
+    { day: 'sun', enabled: false, start: '09:00', end: '13:00' },
+  ],
+};
+
+const CALENDAR_WEEK_LABELS: Record<string, string> = {
+  mon: 'Seg',
+  tue: 'Ter',
+  wed: 'Qua',
+  thu: 'Qui',
+  fri: 'Sex',
+  sat: 'Sab',
+  sun: 'Dom',
+};
 
 interface SettingsViewProps {
   settings: AppSettings;
@@ -84,7 +110,15 @@ interface SettingsViewProps {
     };
   };
   aiSettingsLoading?: boolean;
-  saveAIConfig?: (data: { apiKey?: string; provider?: string; model?: string }) => Promise<void>;
+  saveAIConfig?: (data: {
+    apiKey?: string;
+    apiKeyProvider?: string;
+    provider?: string;
+    model?: string;
+    routes?: AiRoutesConfig;
+    prompts?: AiPromptsConfig;
+    fallback?: AiFallbackConfig;
+  }) => Promise<void>;
   removeAIKey?: (provider: 'google' | 'openai' | 'anthropic') => Promise<void>;
   isSavingAI?: boolean;
 
@@ -172,6 +206,16 @@ interface SettingsViewProps {
   }) => Promise<void>;
   isSavingAutoSuppression?: boolean;
 
+  // Calendar Booking (Google Calendar)
+  calendarBooking?: {
+    ok: boolean;
+    source?: 'db' | 'default';
+    config?: CalendarBookingConfig;
+  } | null;
+  calendarBookingLoading?: boolean;
+  saveCalendarBooking?: (data: Partial<CalendarBookingConfig>) => Promise<void>;
+  isSavingCalendarBooking?: boolean;
+
   // Workflow Builder default
 }
 
@@ -238,6 +282,12 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
   autoSuppressionLoading,
   saveAutoSuppression,
   isSavingAutoSuppression,
+
+  // Calendar Booking
+  calendarBooking,
+  calendarBookingLoading,
+  saveCalendarBooking,
+  isSavingCalendarBooking,
 
 }) => {
   // Always start collapsed
@@ -426,6 +476,103 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
       ttl3Days: autoConfig?.undeliverable131026?.ttl3Days ?? 365,
     },
   }));
+
+  // Calendar Booking form state
+  const calendarConfig = calendarBooking?.config || CALENDAR_BOOKING_FALLBACK;
+  const [isEditingCalendarBooking, setIsEditingCalendarBooking] = useState(false);
+  const [calendarDraft, setCalendarDraft] = useState<CalendarBookingConfig>(calendarConfig);
+  const [calendarAuthStatus, setCalendarAuthStatus] = useState<{
+    connected: boolean;
+    calendar?: {
+      calendarId?: string | null;
+      calendarSummary?: string | null;
+      calendarTimeZone?: string | null;
+    } | null;
+    channel?: {
+      id?: string;
+      expiration?: number | null;
+      lastNotificationAt?: string | null;
+    } | null;
+    hasRefreshToken?: boolean;
+    expiresAt?: number | null;
+  } | null>(null);
+  const [calendarAuthLoading, setCalendarAuthLoading] = useState(false);
+  const [calendarAuthError, setCalendarAuthError] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!isEditingCalendarBooking) {
+      setCalendarDraft(calendarConfig);
+    }
+  }, [calendarConfig, isEditingCalendarBooking]);
+
+  const fetchCalendarAuthStatus = useCallback(async () => {
+    if (!settings.isConnected) return;
+    setCalendarAuthLoading(true);
+    setCalendarAuthError(null);
+    try {
+      const response = await fetch('/api/integrations/google-calendar/status');
+      const data = await response.json().catch(() => ({}));
+      if (!response.ok) {
+        throw new Error((data as any)?.error || 'Falha ao carregar status');
+      }
+      setCalendarAuthStatus(data);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Falha ao carregar status';
+      setCalendarAuthError(message);
+      setCalendarAuthStatus(null);
+    } finally {
+      setCalendarAuthLoading(false);
+    }
+  }, [settings.isConnected]);
+
+  useEffect(() => {
+    fetchCalendarAuthStatus();
+  }, [fetchCalendarAuthStatus]);
+
+  const updateCalendarDraft = (patch: Partial<CalendarBookingConfig>) => {
+    setCalendarDraft((prev) => ({ ...prev, ...patch }));
+  };
+
+  const updateWorkingHours = (day: string, patch: Partial<{ enabled: boolean; start: string; end: string }>) => {
+    setCalendarDraft((prev) => ({
+      ...prev,
+      workingHours: prev.workingHours.map((entry) =>
+        entry.day === day
+          ? { ...entry, ...patch }
+          : entry
+      ),
+    }));
+  };
+
+  const handleSaveCalendarBooking = async () => {
+    if (!saveCalendarBooking) return;
+    await saveCalendarBooking(calendarDraft);
+    setIsEditingCalendarBooking(false);
+  };
+
+  const handleConnectCalendar = () => {
+    window.location.href = '/api/integrations/google-calendar/connect?returnTo=/settings';
+  };
+
+  const handleDisconnectCalendar = async () => {
+    setCalendarAuthLoading(true);
+    setCalendarAuthError(null);
+    try {
+      const response = await fetch('/api/integrations/google-calendar/disconnect', { method: 'POST' });
+      const data = await response.json().catch(() => ({}));
+      if (!response.ok) {
+        throw new Error((data as any)?.error || 'Falha ao desconectar');
+      }
+      toast.success('Google Calendar desconectado');
+      await fetchCalendarAuthStatus();
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Falha ao desconectar';
+      setCalendarAuthError(message);
+      toast.error(message);
+    } finally {
+      setCalendarAuthLoading(false);
+    }
+  };
 
   const TURBO_PRESETS = {
     leve: {
@@ -1221,6 +1368,205 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
         )}
 
         {/* Workflow Builder Default moved to /workflows */}
+
+        {/* Calendar Booking Section */}
+        {settings.isConnected && (
+          <div className="glass-panel rounded-2xl p-8">
+            <div className="flex items-start justify-between gap-4">
+              <div>
+                <h3 className="text-lg font-semibold text-white mb-2 flex items-center gap-2">
+                  <span className="w-1 h-6 bg-emerald-500 rounded-full"></span>
+                  <Calendar size={18} className="text-emerald-300" />
+                  Agendamento (Google Calendar)
+                </h3>
+                <p className="text-sm text-gray-400">
+                  Define as regras padrao para gerar slots e validar reservas no Google Calendar.
+                </p>
+              </div>
+
+              <button
+                type="button"
+                onClick={() => setIsEditingCalendarBooking((v) => !v)}
+                className="h-10 px-4 rounded-lg bg-white/5 text-white hover:bg-white/10 border border-white/10 hover:border-white/20 transition-all text-sm font-medium inline-flex items-center gap-2 whitespace-nowrap"
+              >
+                <Edit2 size={14} /> {isEditingCalendarBooking ? 'Cancelar' : 'Editar'}
+              </button>
+            </div>
+
+            <div className="mt-5 rounded-xl border border-white/10 bg-zinc-900/50 p-4">
+              <div className="flex flex-wrap items-center justify-between gap-4">
+                <div>
+                  <div className="text-xs text-gray-400">Status da integracao</div>
+                  <div className="mt-1 text-sm text-white">
+                    {calendarAuthLoading
+                      ? 'Verificando...'
+                      : calendarAuthStatus?.connected
+                        ? 'Conectado'
+                        : 'Desconectado'}
+                  </div>
+                  {calendarAuthStatus?.calendar?.calendarSummary && (
+                    <div className="mt-1 text-xs text-gray-400">
+                      Calendario: {calendarAuthStatus.calendar.calendarSummary}
+                    </div>
+                  )}
+                  {calendarAuthStatus?.expiresAt && (
+                    <div className="mt-1 text-xs text-gray-500">
+                      Token expira: {new Date(calendarAuthStatus.expiresAt).toLocaleString('pt-BR')}
+                    </div>
+                  )}
+                  {calendarAuthError && (
+                    <div className="mt-1 text-xs text-red-400">{calendarAuthError}</div>
+                  )}
+                </div>
+                <div className="flex items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={fetchCalendarAuthStatus}
+                    className="h-9 px-3 rounded-lg border border-white/10 bg-white/5 text-xs text-white hover:bg-white/10 transition-colors"
+                  >
+                    Atualizar
+                  </button>
+                  {calendarAuthStatus?.connected ? (
+                    <button
+                      type="button"
+                      onClick={handleDisconnectCalendar}
+                      disabled={calendarAuthLoading}
+                      className="h-9 px-3 rounded-lg border border-red-500/30 bg-red-500/10 text-xs text-red-200 hover:bg-red-500/20 transition-colors"
+                    >
+                      Desconectar
+                    </button>
+                  ) : (
+                    <button
+                      type="button"
+                      onClick={handleConnectCalendar}
+                      className="h-9 px-3 rounded-lg border border-emerald-500/30 bg-emerald-500/10 text-xs text-emerald-200 hover:bg-emerald-500/20 transition-colors"
+                    >
+                      Conectar
+                    </button>
+                  )}
+                </div>
+              </div>
+            </div>
+
+            {calendarBookingLoading ? (
+              <div className="mt-6 text-sm text-gray-400">Carregando configuracoes...</div>
+            ) : (
+              <>
+                <div className="mt-6 grid grid-cols-1 md:grid-cols-3 gap-4">
+                  <div className="rounded-xl border border-white/10 bg-zinc-900/50 p-4">
+                    <div className="text-xs text-gray-400">Fuso horario</div>
+                    {isEditingCalendarBooking ? (
+                      <input
+                        type="text"
+                        value={calendarDraft.timezone}
+                        onChange={(e) => updateCalendarDraft({ timezone: e.target.value })}
+                        className="mt-2 w-full px-3 py-2 bg-zinc-900/50 border border-white/10 rounded-lg text-sm text-white font-mono"
+                        placeholder="America/Sao_Paulo"
+                      />
+                    ) : (
+                      <div className="mt-2 text-sm text-white font-mono">{calendarDraft.timezone}</div>
+                    )}
+                  </div>
+
+                  <div className="rounded-xl border border-white/10 bg-zinc-900/50 p-4">
+                    <div className="text-xs text-gray-400">Duracao (min)</div>
+                    {isEditingCalendarBooking ? (
+                      <input
+                        type="number"
+                        min={5}
+                        max={240}
+                        value={calendarDraft.slotDurationMinutes}
+                        onChange={(e) => updateCalendarDraft({ slotDurationMinutes: Number(e.target.value) })}
+                        className="mt-2 w-full px-3 py-2 bg-zinc-900/50 border border-white/10 rounded-lg text-sm text-white font-mono"
+                      />
+                    ) : (
+                      <div className="mt-2 text-sm text-white font-mono">{calendarDraft.slotDurationMinutes} min</div>
+                    )}
+                  </div>
+
+                  <div className="rounded-xl border border-white/10 bg-zinc-900/50 p-4">
+                    <div className="text-xs text-gray-400">Buffer (min)</div>
+                    {isEditingCalendarBooking ? (
+                      <input
+                        type="number"
+                        min={0}
+                        max={120}
+                        value={calendarDraft.slotBufferMinutes}
+                        onChange={(e) => updateCalendarDraft({ slotBufferMinutes: Number(e.target.value) })}
+                        className="mt-2 w-full px-3 py-2 bg-zinc-900/50 border border-white/10 rounded-lg text-sm text-white font-mono"
+                      />
+                    ) : (
+                      <div className="mt-2 text-sm text-white font-mono">{calendarDraft.slotBufferMinutes} min</div>
+                    )}
+                  </div>
+                </div>
+
+                <div className="mt-6">
+                  <div className="text-xs text-gray-400 mb-3">Horario de funcionamento</div>
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                    {calendarDraft.workingHours.map((day) => (
+                      <div key={day.day} className="flex items-center gap-3 rounded-xl border border-white/10 bg-zinc-900/40 px-4 py-3">
+                        <label className="flex items-center gap-2 text-sm text-gray-300">
+                          <input
+                            type="checkbox"
+                            checked={day.enabled}
+                            onChange={(e) => updateWorkingHours(day.day, { enabled: e.target.checked })}
+                            disabled={!isEditingCalendarBooking}
+                            className="accent-emerald-500"
+                          />
+                          <span className="w-10">{CALENDAR_WEEK_LABELS[day.day] || day.day}</span>
+                        </label>
+                        <div className="flex items-center gap-2 ml-auto">
+                          <input
+                            type="time"
+                            value={day.start}
+                            disabled={!isEditingCalendarBooking || !day.enabled}
+                            onChange={(e) => updateWorkingHours(day.day, { start: e.target.value })}
+                            className="px-2 py-1 bg-zinc-900/60 border border-white/10 rounded text-xs text-white font-mono"
+                          />
+                          <span className="text-gray-500 text-xs">ate</span>
+                          <input
+                            type="time"
+                            value={day.end}
+                            disabled={!isEditingCalendarBooking || !day.enabled}
+                            onChange={(e) => updateWorkingHours(day.day, { end: e.target.value })}
+                            className="px-2 py-1 bg-zinc-900/60 border border-white/10 rounded text-xs text-white font-mono"
+                          />
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                  <div className="mt-3 text-xs text-gray-500">
+                    Fonte: {calendarBooking?.source || 'default'}
+                  </div>
+                </div>
+
+                {isEditingCalendarBooking && (
+                  <div className="mt-6 flex justify-end gap-3">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setCalendarDraft(calendarConfig);
+                        setIsEditingCalendarBooking(false);
+                      }}
+                      className="h-10 px-4 text-sm text-gray-400 hover:text-white transition-colors"
+                    >
+                      Cancelar
+                    </button>
+                    <button
+                      type="button"
+                      onClick={handleSaveCalendarBooking}
+                      disabled={!!isSavingCalendarBooking}
+                      className="h-10 px-6 rounded-lg bg-emerald-500/90 text-white hover:bg-emerald-500 transition-colors text-sm font-medium inline-flex items-center gap-2"
+                    >
+                      {isSavingCalendarBooking ? 'Salvando...' : 'Salvar regras'}
+                    </button>
+                  </div>
+                )}
+              </>
+            )}
+          </div>
+        )}
 
         {/* Test Contact Section */}
         {settings.isConnected && (

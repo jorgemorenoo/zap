@@ -216,6 +216,22 @@ export interface AppSettings {
   testContact?: TestContact;
 }
 
+export type Weekday = 'mon' | 'tue' | 'wed' | 'thu' | 'fri' | 'sat' | 'sun';
+
+export interface WorkingHoursDay {
+  day: Weekday;
+  enabled: boolean;
+  start: string;
+  end: string;
+}
+
+export interface CalendarBookingConfig {
+  timezone: string;
+  slotDurationMinutes: number;
+  slotBufferMinutes: number;
+  workingHours: WorkingHoursDay[];
+}
+
 export interface TestContact {
   name?: string;
   phone: string;

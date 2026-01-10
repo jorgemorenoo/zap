@@ -12,6 +12,7 @@ import {
   getStepImporter,
   type StepImporter,
 } from "./step-registry";
+import { findActionById } from "./plugins";
 import type { StepContext } from "./steps/step-handler";
 import { triggerStep } from "./steps/trigger";
 import { getSupabaseAdmin } from "@/lib/supabase";
@@ -38,6 +39,13 @@ const SYSTEM_ACTIONS: Record<string, StepImporter> = {
     stepFunction: "conditionStep",
   },
 };
+
+function isAskQuestionAction(actionType?: string): boolean {
+  if (!actionType) return false;
+  if (actionType === "Ask Question") return true;
+  const action = findActionById(actionType);
+  return action?.slug === "ask-question";
+}
 
 type ExecutionResult = {
   success: boolean;
@@ -754,7 +762,7 @@ export async function executeWorkflow(
             };
 
             let resumeNodeId: string | null = null;
-            if (actionType === "Ask Question") {
+            if (isAskQuestionAction(actionType)) {
               const nextNodes = edgesBySource.get(node.id) || [];
               if (nextNodes.length === 0) {
                 result = {
@@ -817,7 +825,7 @@ export async function executeWorkflow(
             }
 
             if (
-              actionType === "Ask Question" &&
+              isAskQuestionAction(actionType) &&
               result.success &&
               resumeNodeId
             ) {

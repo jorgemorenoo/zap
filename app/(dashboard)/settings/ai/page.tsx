@@ -1,114 +1,148 @@
+'use client'
+
+import { useCallback, useEffect, useMemo, useState } from 'react'
 import {
-  Activity,
-  Beaker,
   Bot,
-  Clock,
+  ChevronDown,
   Coins,
-  Database,
-  ExternalLink,
   FileText,
   FormInput,
-  KeyRound,
   MessageSquareText,
-  Play,
   ShieldCheck,
-  Sliders,
   Sparkles,
-  ToggleRight,
   Wand2,
-  Zap,
 } from 'lucide-react'
 import { Page, PageActions, PageDescription, PageHeader, PageTitle } from '@/components/ui/page'
+import { AI_PROVIDERS, type AIProvider } from '@/lib/ai/providers'
+import {
+  DEFAULT_AI_FALLBACK,
+  DEFAULT_AI_PROMPTS,
+  DEFAULT_AI_ROUTES,
+  type AiFallbackConfig,
+  type AiPromptsConfig,
+  type AiRoutesConfig,
+} from '@/lib/ai/ai-center-defaults'
+import { settingsService } from '@/services'
+import { toast } from 'sonner'
 
 type PromptItem = {
   id: string
+  valueKey: keyof AiPromptsConfig
   title: string
   description: string
   path: string
   variables: string[]
   rows?: number
-  value: string
   Icon: typeof FileText
+}
+
+type ProviderStatus = {
+  isConfigured: boolean
+  source: 'database' | 'env' | 'none'
+  tokenPreview?: string | null
+}
+
+type AIConfigResponse = {
+  provider: AIProvider
+  model: string
+  providers: {
+    google: ProviderStatus
+    openai: ProviderStatus
+    anthropic: ProviderStatus
+  }
+  routes: AiRoutesConfig
+  prompts: AiPromptsConfig
+  fallback: AiFallbackConfig
+}
+
+const EMPTY_PROVIDER_STATUS: ProviderStatus = {
+  isConfigured: false,
+  source: 'none',
+  tokenPreview: null,
 }
 
 const PROMPTS: PromptItem[] = [
   {
     id: 'template-short',
+    valueKey: 'templateShort',
     title: 'Mensagem curta (WhatsApp)',
     description: 'Usado para gerar textos rápidos de campanha.',
-    path: '/api/ai/generate-template',
+    path: '/lib/ai/prompts/template-short.ts',
     variables: ['{{prompt}}', '{{1}}'],
     rows: 7,
-    value: `Crie uma mensagem de WhatsApp curta, profissional e persuasiva baseada neste pedido: "{{prompt}}".
-Regras:
-1. Use a variável {{1}} para o nome do cliente.
-2. Use emojis com moderação.
-3. Seja direto (max 300 caracteres).
-4. Retorne APENAS o texto da mensagem, sem explicações.`,
     Icon: MessageSquareText,
   },
   {
     id: 'utility-templates',
+    valueKey: 'utilityGenerationTemplate',
     title: 'Templates UTILITY (geração)',
     description: 'Gera templates aprováveis pela Meta usando variáveis.',
-    path: '/api/ai/generate-utility-templates',
+    path: '/lib/ai/prompts/utility-generator.ts',
     variables: ['{{prompt}}', '{{quantity}}', '{{language}}', '{{primaryUrl}}'],
-    rows: 9,
-    value: `Você é especialista em templates WhatsApp Business API categoria UTILITY.
-Objetivo: gerar {{quantity}} templates aprováveis pela Meta.
-Regras principais:
-- Use variáveis {{1}}, {{2}}, {{3}} para datas, horários, quantidades e termos promocionais.
-- Evite linguagem de urgência, escassez ou promoção hardcoded.
-- Não inicie nem termine frases com variável.
-Idioma: {{language}}.
-Pedido do usuário: "{{prompt}}".
-URL obrigatória (se houver): {{primaryUrl}}.
-Formato: JSON array com name, content, header, footer e buttons.`,
+    rows: 18,
     Icon: Wand2,
   },
   {
     id: 'ai-judge',
+    valueKey: 'utilityJudgeTemplate',
     title: 'AI Judge (classificação)',
     description: 'Analisa se o template é UTILITY ou MARKETING e sugere correções.',
-    path: '/lib/ai/services/ai-judge.ts',
+    path: '/lib/ai/prompts/utility-judge.ts',
     variables: ['{{header}}', '{{body}}'],
-    rows: 8,
-    value: `Você é um juiz especializado em aprovação de templates WhatsApp Business API.
-Analise o header e body e retorne JSON com:
-- approved (true/false)
-- predictedCategory ("UTILITY" | "MARKETING")
-- confidence (0..1)
-- issues (lista de palavras problemáticas)
-- fixedBody / fixedHeader (com variáveis substituindo termos proibidos).`,
+    rows: 18,
     Icon: ShieldCheck,
   },
   {
     id: 'flow-form',
+    valueKey: 'flowFormTemplate',
     title: 'MiniApp Form (JSON)',
     description: 'Gera o formulário para MiniApps (WhatsApp Flow) em JSON estrito.',
-    path: '/api/ai/generate-flow-form',
-    variables: ['{{prompt}}', '{{titleHint}}', '{{maxQuestions}}'],
-    rows: 9,
-    value: `Você é especialista em criar MiniApps (WhatsApp Flows) no formato de formulário.
-Gere entre 3 e {{maxQuestions}} campos, com tipos adequados.
-Retorne APENAS JSON válido (strict JSON, sem markdown).
-Título e intro em pt-BR.
-Se houver, use o título sugerido: "{{titleHint}}".
-Pedido do usuário: "{{prompt}}".`,
+    path: '/lib/ai/prompts/flow-form.ts',
+    variables: ['{{prompt}}', '{{titleHintBlock}}', '{{maxQuestions}}'],
+    rows: 18,
     Icon: FormInput,
   },
+]
+
+const getProviderConfig = (providerId: AIProvider) =>
+  AI_PROVIDERS.find((provider) => provider.id === providerId)
+
+const getProviderLabel = (providerId: AIProvider) =>
+  getProviderConfig(providerId)?.name ?? providerId
+
+const getDefaultModelId = (providerId: AIProvider) =>
+  getProviderConfig(providerId)?.models[0]?.id ?? ''
+
+const getModelLabel = (providerId: AIProvider, modelId: string) => {
+  const provider = getProviderConfig(providerId)
+  return provider?.models.find((model) => model.id === modelId)?.name ?? modelId
+}
+
+const getSafeProvider = (provider?: string): AIProvider =>
+  getProviderConfig(provider as AIProvider)?.id ?? 'google'
+
+const getModelOptions = (providerId: AIProvider, currentModelId: string) => {
+  const provider = getProviderConfig(providerId)
+  const models = provider?.models ?? []
+  if (currentModelId && !models.some((model) => model.id === currentModelId)) {
+    return [...models, { id: currentModelId, name: currentModelId }]
+  }
+  return models
+}
+
+const ROUTE_ITEMS: Array<{
+  key: keyof AiRoutesConfig
+  title: string
+  detail: string
+}> = [
+  { key: 'generateTemplate', title: 'Templates rápidos', detail: '/api/ai/generate-template' },
   {
-    id: 'template-agent',
-    title: 'Template Agent (sistema)',
-    description: 'Prompt base usado pelo agente de templates com estratégias.',
-    path: '/lib/ai/services/template-agent.ts',
-    variables: ['{{strategy}}', '{{examples}}', '{{rules}}'],
-    rows: 7,
-    value: `Use o prompt do agente para guiar a geração por estratégia (utility/marketing/bypass).
-Inclua exemplos oficiais, palavras proibidas e o tom aprovado.
-Saída em JSON com name, body e buttons conforme a estratégia.`,
-    Icon: FileText,
+    key: 'generateUtilityTemplates',
+    title: 'Templates utility + Judge',
+    detail: '/api/ai/generate-utility-templates',
   },
+  { key: 'generateFlowForm', title: 'MiniApp Form Builder', detail: '/api/ai/generate-flow-form' },
+  { key: 'workflowBuilder', title: 'Workflow Builder', detail: '/api/builder/ai/generate' },
 ]
 
 function StatusPill({
@@ -134,43 +168,57 @@ function StatusPill({
   )
 }
 
-function MockSwitch({ on }: { on?: boolean }) {
+function MockSwitch({
+  on,
+  onToggle,
+  disabled,
+  label,
+}: {
+  on?: boolean
+  onToggle?: (next: boolean) => void
+  disabled?: boolean
+  label?: string
+}) {
   return (
-    <span
+    <button
+      type="button"
+      role="switch"
+      aria-checked={!!on}
+      aria-label={label}
+      disabled={disabled}
+      onClick={() => onToggle?.(!on)}
       className={`relative inline-flex h-6 w-11 items-center rounded-full border transition ${
         on ? 'border-emerald-500/40 bg-emerald-500/20' : 'border-white/10 bg-white/5'
-      }`}
-      aria-hidden="true"
+      } ${disabled ? 'cursor-not-allowed opacity-60' : ''}`}
     >
       <span
         className={`inline-block size-4 rounded-full transition ${
           on ? 'translate-x-6 bg-emerald-300' : 'translate-x-1 bg-white/50'
         }`}
       />
-    </span>
+    </button>
   )
 }
 
-function Metric({
-  label,
+function PromptCard({
+  item,
   value,
-  helper,
+  onChange,
 }: {
-  label: string
+  item: PromptItem
   value: string
-  helper?: string
+  onChange: (next: string) => void
 }) {
-  return (
-    <div className="rounded-xl border border-white/10 bg-zinc-900/60 p-4">
-      <div className="text-xs text-gray-400">{label}</div>
-      <div className="mt-2 text-lg font-semibold text-white">{value}</div>
-      {helper ? <div className="mt-1 text-xs text-gray-500">{helper}</div> : null}
-    </div>
-  )
-}
-
-function PromptCard({ item }: { item: PromptItem }) {
   const Icon = item.Icon
+  const handleCopy = async () => {
+    try {
+      await navigator.clipboard.writeText(value)
+      toast.success('Prompt copiado')
+    } catch (error) {
+      console.error('Failed to copy prompt:', error)
+      toast.error('Nao foi possivel copiar o prompt')
+    }
+  }
   return (
     <div className="rounded-2xl border border-white/10 bg-zinc-900/60 p-5">
       <div className="flex flex-wrap items-start justify-between gap-4">
@@ -189,6 +237,7 @@ function PromptCard({ item }: { item: PromptItem }) {
         <button
           type="button"
           className="h-9 rounded-lg border border-white/10 bg-white/5 px-3 text-xs font-medium text-white transition hover:bg-white/10"
+          onClick={handleCopy}
         >
           Testar prompt
         </button>
@@ -198,7 +247,8 @@ function PromptCard({ item }: { item: PromptItem }) {
         <textarea
           className="min-h-[160px] w-full rounded-xl border border-white/10 bg-black/50 px-4 py-3 text-sm text-gray-200 outline-none transition focus:border-emerald-500/40 focus:ring-2 focus:ring-emerald-500/10"
           rows={item.rows ?? 6}
-          defaultValue={item.value}
+          value={value}
+          onChange={(event) => onChange(event.target.value)}
         />
       </div>
 
@@ -218,6 +268,169 @@ function PromptCard({ item }: { item: PromptItem }) {
 }
 
 export default function AICenterPage() {
+  const [providerStatuses, setProviderStatuses] = useState<AIConfigResponse['providers']>({
+    google: EMPTY_PROVIDER_STATUS,
+    openai: EMPTY_PROVIDER_STATUS,
+    anthropic: EMPTY_PROVIDER_STATUS,
+  })
+  const [provider, setProvider] = useState<AIProvider>('google')
+  const [model, setModel] = useState(() => getDefaultModelId('google'))
+  const [routes, setRoutes] = useState<AiRoutesConfig>(DEFAULT_AI_ROUTES)
+  const [prompts, setPrompts] = useState<AiPromptsConfig>(DEFAULT_AI_PROMPTS)
+  const [fallback, setFallback] = useState<AiFallbackConfig>(DEFAULT_AI_FALLBACK)
+  const [editingKeyProvider, setEditingKeyProvider] = useState<AIProvider | null>(null)
+  const [apiKeyDrafts, setApiKeyDrafts] = useState<Record<AIProvider, string>>({
+    google: '',
+    openai: '',
+    anthropic: '',
+  })
+  const [isSavingKey, setIsSavingKey] = useState(false)
+  const [isLoading, setIsLoading] = useState(true)
+  const [isSaving, setIsSaving] = useState(false)
+  const [errorMessage, setErrorMessage] = useState<string | null>(null)
+
+  const primaryProviderLabel = useMemo(() => getProviderLabel(provider), [provider])
+  const primaryModelLabel = useMemo(
+    () => (model ? getModelLabel(provider, model) : '—'),
+    [provider, model]
+  )
+  const activeRoutesCount = useMemo(
+    () => Object.values(routes).filter(Boolean).length,
+    [routes]
+  )
+  const primaryProviderStatus = providerStatuses[provider] ?? EMPTY_PROVIDER_STATUS
+  const primaryProviderConfigured = primaryProviderStatus.isConfigured
+
+  const fallbackProviderLabel = useMemo(
+    () => getProviderLabel(fallback.provider),
+    [fallback.provider]
+  )
+  const fallbackModelLabel = useMemo(
+    () => (fallback.model ? getModelLabel(fallback.provider, fallback.model) : '—'),
+    [fallback.provider, fallback.model]
+  )
+
+  const primaryModelOptions = useMemo(
+    () => getModelOptions(provider, model),
+    [provider, model]
+  )
+  const fallbackModelOptions = useMemo(
+    () => getModelOptions(fallback.provider, fallback.model),
+    [fallback.provider, fallback.model]
+  )
+
+  const loadConfig = useCallback(async () => {
+    setIsLoading(true)
+    setErrorMessage(null)
+    try {
+      const data = (await settingsService.getAIConfig()) as AIConfigResponse
+      const nextProvider = getSafeProvider(data.provider)
+      const nextModel = data.model?.trim() ? data.model : getDefaultModelId(nextProvider)
+      const fallbackFromApi = data.fallback ?? DEFAULT_AI_FALLBACK
+      const nextFallbackProvider = getSafeProvider(fallbackFromApi.provider)
+      const nextFallbackModel = fallbackFromApi.model?.trim()
+        ? fallbackFromApi.model
+        : getDefaultModelId(nextFallbackProvider)
+
+      setProvider(nextProvider)
+      setModel(nextModel)
+      setRoutes({ ...DEFAULT_AI_ROUTES, ...(data.routes ?? {}) })
+      setPrompts({ ...DEFAULT_AI_PROMPTS, ...(data.prompts ?? {}) })
+      setFallback({
+        ...DEFAULT_AI_FALLBACK,
+        ...fallbackFromApi,
+        provider: nextFallbackProvider,
+        model: nextFallbackModel,
+      })
+      setProviderStatuses({
+        google: data.providers?.google ?? EMPTY_PROVIDER_STATUS,
+        openai: data.providers?.openai ?? EMPTY_PROVIDER_STATUS,
+        anthropic: data.providers?.anthropic ?? EMPTY_PROVIDER_STATUS,
+      })
+    } catch (error) {
+      const message =
+        error instanceof Error ? error.message : 'Erro ao carregar configuracoes de IA'
+      setErrorMessage(message)
+      toast.error(message)
+    } finally {
+      setIsLoading(false)
+    }
+  }, [])
+
+  useEffect(() => {
+    void loadConfig()
+  }, [loadConfig])
+
+  const handleProviderSelect = (nextProvider: AIProvider) => {
+    setProvider(nextProvider)
+    setModel(getDefaultModelId(nextProvider))
+  }
+
+  const handleFallbackProviderSelect = (nextProvider: AIProvider) => {
+    setFallback((current) => ({
+      ...current,
+      provider: nextProvider,
+      model: getDefaultModelId(nextProvider),
+    }))
+  }
+
+  const handleSave = async () => {
+    setIsSaving(true)
+    setErrorMessage(null)
+    try {
+      await settingsService.saveAIConfig({
+        provider,
+        model,
+        routes,
+        prompts,
+        fallback,
+      })
+      toast.success('Configuracoes salvas')
+      await loadConfig()
+    } catch (error) {
+      const message =
+        error instanceof Error ? error.message : 'Erro ao salvar configuracoes'
+      setErrorMessage(message)
+      toast.error(message)
+    } finally {
+      setIsSaving(false)
+    }
+  }
+
+  const handleRestore = () => {
+    setProvider('google')
+    setModel(getDefaultModelId('google'))
+    setRoutes({ ...DEFAULT_AI_ROUTES })
+    setPrompts({ ...DEFAULT_AI_PROMPTS })
+    setFallback({ ...DEFAULT_AI_FALLBACK })
+    setErrorMessage(null)
+    toast.success('Padroes restaurados. Clique em Salvar para aplicar.')
+  }
+
+  const handleSaveKey = async (targetProvider: AIProvider) => {
+    const apiKey = apiKeyDrafts[targetProvider].trim()
+    if (!apiKey) {
+      toast.error('Informe a chave de API')
+      return
+    }
+    setIsSavingKey(true)
+    try {
+      await settingsService.saveAIConfig({
+        apiKey,
+        apiKeyProvider: targetProvider,
+      })
+      setApiKeyDrafts((current) => ({ ...current, [targetProvider]: '' }))
+      setEditingKeyProvider(null)
+      toast.success('Chave atualizada')
+      await loadConfig()
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Erro ao salvar chave'
+      toast.error(message)
+    } finally {
+      setIsSavingKey(false)
+    }
+  }
+
   return (
     <Page>
       <PageHeader>
@@ -228,382 +441,383 @@ export default function AICenterPage() {
           </div>
           <PageTitle>Central de IA</PageTitle>
           <PageDescription>
-            Provedores, rotas, governança e prompts em uma única tela.
+            Escolha o modelo, publique as rotas. O resto fica invisível.
           </PageDescription>
         </div>
         <PageActions>
           <button
             type="button"
-            className="h-10 rounded-xl border border-white/10 bg-white/5 px-4 text-sm font-medium text-white transition hover:bg-white/10"
+            className="h-10 rounded-xl border border-white/10 bg-white/5 px-4 text-sm font-medium text-white transition hover:bg-white/10 disabled:cursor-not-allowed disabled:opacity-60"
+            onClick={handleRestore}
+            disabled={isLoading || isSaving}
           >
-            Restaurar padrão
+            Restaurar
           </button>
           <button
             type="button"
-            className="h-10 rounded-xl bg-white px-4 text-sm font-semibold text-zinc-900 transition hover:bg-gray-100"
+            className="h-10 rounded-xl bg-white px-4 text-sm font-semibold text-zinc-900 transition hover:bg-gray-100 disabled:cursor-not-allowed disabled:opacity-60"
+            onClick={handleSave}
+            disabled={isLoading || isSaving}
           >
-            Salvar tudo
+            {isSaving ? 'Salvando...' : 'Salvar'}
           </button>
         </PageActions>
       </PageHeader>
 
-      <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+      {errorMessage && (
+        <div className="mb-4 rounded-2xl border border-red-500/20 bg-red-500/10 px-4 py-3 text-xs text-red-300">
+          {errorMessage}
+        </div>
+      )}
+
+      <div className="grid gap-4 sm:grid-cols-2">
         <div className="glass-panel rounded-2xl p-5">
           <div className="flex items-center justify-between">
-            <div className="text-xs text-gray-400">Status Geral</div>
-            <StatusPill label="Ativo" tone="emerald" />
+            <div className="text-xs text-gray-400">Status</div>
+            <StatusPill
+              label={primaryProviderConfigured ? 'Ativo' : 'Sem chave'}
+              tone={primaryProviderConfigured ? 'emerald' : 'amber'}
+            />
           </div>
           <div className="mt-4 flex items-center gap-3 text-white">
             <Bot className="size-6 text-emerald-300" />
             <div>
-              <div className="text-base font-semibold">Gemini 2.5 Flash</div>
-              <div className="text-xs text-gray-400">Provedor principal</div>
+              <div className="text-base font-semibold">{primaryProviderLabel}</div>
+              <div className="text-xs text-gray-400">Modelo: {primaryModelLabel}</div>
             </div>
           </div>
         </div>
 
         <div className="glass-panel rounded-2xl p-5">
           <div className="flex items-center justify-between">
-            <div className="text-xs text-gray-400">Custo estimado</div>
+            <div className="text-xs text-gray-400">Custo 30 dias</div>
             <Coins className="size-4 text-amber-300" />
           </div>
           <div className="mt-4 text-2xl font-semibold text-white">R$ 312,40</div>
           <div className="text-xs text-gray-400">Últimos 30 dias</div>
         </div>
-
-        <div className="glass-panel rounded-2xl p-5">
-          <div className="flex items-center justify-between">
-            <div className="text-xs text-gray-400">Latência P50</div>
-            <Clock className="size-4 text-sky-300" />
-          </div>
-          <div className="mt-4 text-2xl font-semibold text-white">740 ms</div>
-          <div className="text-xs text-gray-400">Fluxos e templates</div>
-        </div>
-
-        <div className="glass-panel rounded-2xl p-5">
-          <div className="flex items-center justify-between">
-            <div className="text-xs text-gray-400">Governança</div>
-            <ShieldCheck className="size-4 text-emerald-300" />
-          </div>
-          <div className="mt-4 text-2xl font-semibold text-white">OK</div>
-          <div className="text-xs text-gray-400">Logs + PII mascarada</div>
-        </div>
       </div>
 
-      <div className="grid gap-6 lg:grid-cols-[minmax(0,2fr)_minmax(0,1fr)]">
-        <div className="space-y-6">
-          <section className="glass-panel rounded-2xl p-6">
-            <div className="flex items-center justify-between">
-              <div className="space-y-1">
-                <h3 className="text-lg font-semibold text-white">Provedores e modelos</h3>
-                <p className="text-sm text-gray-400">
-                  Defina o provedor padrão, fallback automático e parâmetros globais.
-                </p>
-              </div>
-              <div className="flex items-center gap-2 text-xs text-emerald-300">
-                <ToggleRight className="size-4" />
-                Auto-fallback ativo
-              </div>
+      <div className="space-y-6">
+        <section className="glass-panel rounded-2xl p-6">
+          <div className="flex flex-wrap items-center justify-between gap-4">
+            <div className="space-y-1">
+              <h3 className="text-lg font-semibold text-white">Modelo principal</h3>
+              <p className="text-sm text-gray-400">Escolha o modelo para produção.</p>
             </div>
+            <div className="text-xs text-gray-500">
+              Fallback automático:{' '}
+              {fallback.enabled
+                ? `${fallbackProviderLabel} · ${fallbackModelLabel}`
+                : 'Desativado'}
+            </div>
+          </div>
 
-            <div className="mt-6 grid gap-3 md:grid-cols-3">
-              {[
-                { name: 'Google Gemini', model: 'gemini-2.5-flash', active: true },
-                { name: 'OpenAI GPT', model: 'gpt-5.1', active: false },
-                { name: 'Anthropic Claude', model: 'claude-sonnet-4-5', active: false },
-              ].map((item) => (
+          <div className="mt-5 space-y-2">
+            {AI_PROVIDERS.map((item) => {
+              const isActive = item.id === provider
+              const status = providerStatuses[item.id] ?? EMPTY_PROVIDER_STATUS
+              const statusLabel = isActive
+                ? status.isConfigured
+                  ? 'Em uso'
+                  : 'Sem chave'
+                : status.isConfigured
+                  ? 'Disponível'
+                  : 'Inativa'
+              const statusTone =
+                status.isConfigured && isActive
+                  ? 'emerald'
+                  : status.isConfigured
+                    ? 'zinc'
+                    : 'amber'
+              return (
                 <div
-                  key={item.name}
-                  className={`rounded-xl border p-4 transition ${
-                    item.active
-                      ? 'border-emerald-500/40 bg-emerald-500/10 shadow-[0_0_20px_rgba(16,185,129,0.2)]'
+                  key={item.id}
+                  className={`rounded-xl border p-4 ${
+                    isActive
+                      ? 'border-emerald-500/30 bg-emerald-500/5'
                       : 'border-white/10 bg-zinc-900/60'
                   }`}
                 >
-                  <div className="flex items-center justify-between">
-                    <div className="text-sm font-semibold text-white">{item.name}</div>
-                    {item.active ? (
-                      <StatusPill label="Padrão" tone="emerald" />
-                    ) : (
-                      <StatusPill label="Disponível" tone="zinc" />
-                    )}
-                  </div>
-                  <div className="mt-2 text-xs text-gray-400">Modelo: {item.model}</div>
-                  <button
-                    type="button"
-                    className="mt-4 w-full rounded-lg border border-white/10 bg-white/5 py-2 text-xs font-medium text-white transition hover:bg-white/10"
-                  >
-                    Selecionar como padrão
-                  </button>
-                </div>
-              ))}
-            </div>
-
-            <div className="mt-6 grid gap-4 md:grid-cols-2">
-              <div className="rounded-xl border border-white/10 bg-zinc-900/70 p-4">
-                <div className="flex items-center gap-2 text-sm font-medium text-white">
-                  <Sliders className="size-4 text-emerald-300" />
-                  Modelo principal
-                </div>
-                <div className="mt-3 rounded-lg border border-white/10 bg-black/40 px-3 py-2 text-sm text-gray-300">
-                  gemini-2.5-flash
-                </div>
-                <div className="mt-3 text-xs text-gray-500">Temperatura: 0.7 · Max tokens: 1400</div>
-              </div>
-              <div className="rounded-xl border border-white/10 bg-zinc-900/70 p-4">
-                <div className="flex items-center gap-2 text-sm font-medium text-white">
-                  <Zap className="size-4 text-amber-300" />
-                  Fallback inteligente
-                </div>
-                <div className="mt-3 rounded-lg border border-white/10 bg-black/40 px-3 py-2 text-sm text-gray-300">
-                  gpt-5.1-mini
-                </div>
-                <div className="mt-3 text-xs text-gray-500">Aciona após 2 erros ou 1200 ms</div>
-              </div>
-            </div>
-          </section>
-
-          <section className="glass-panel rounded-2xl p-6">
-            <div className="flex items-start justify-between gap-4">
-              <div className="space-y-1">
-                <h3 className="text-lg font-semibold text-white">Chaves e origem</h3>
-                <p className="text-sm text-gray-400">
-                  Controle onde as chaves ficam salvas e quem pode editá-las.
-                </p>
-              </div>
-              <button
-                type="button"
-                className="h-9 rounded-lg border border-white/10 bg-white/5 px-3 text-xs font-medium text-white transition hover:bg-white/10"
-              >
-                Gerenciar permissões
-              </button>
-            </div>
-
-            <div className="mt-5 space-y-3">
-              {[
-                { label: 'Gemini API Key', preview: 'AIza…D8kT', source: 'Banco (Supabase)', active: true },
-                { label: 'OpenAI API Key', preview: 'sk-…pW3c', source: 'Env var', active: false },
-                { label: 'Anthropic API Key', preview: 'sk-ant-…4mP', source: '—', active: false },
-              ].map((item) => (
-                <div key={item.label} className="rounded-xl border border-white/10 bg-zinc-900/60 p-4">
-                  <div className="flex flex-wrap items-center justify-between gap-4">
+                  <div className="flex flex-wrap items-center justify-between gap-3">
                     <div>
-                      <div className="text-sm font-medium text-white">{item.label}</div>
-                      <div className="mt-1 text-xs text-gray-400">
-                        {item.preview} · {item.source}
+                      <div className="text-sm font-semibold text-white">{item.name}</div>
+                      <div className="text-xs text-gray-400">
+                        Modelo: {isActive ? primaryModelLabel : item.models[0]?.name ?? '—'}
                       </div>
                     </div>
-                    <div className="flex items-center gap-2">
-                      {item.active ? <StatusPill label="Em uso" tone="emerald" /> : <StatusPill label="Inativa" tone="amber" />}
+                    {isActive ? (
+                      <StatusPill label={statusLabel} tone={statusTone} />
+                    ) : (
                       <button
                         type="button"
-                        className="rounded-lg border border-white/10 bg-white/5 px-3 py-1.5 text-xs text-white transition hover:bg-white/10"
+                        className="rounded-lg border border-white/10 bg-white/5 px-3 py-1.5 text-xs font-medium text-white transition hover:bg-white/10"
+                        onClick={() => handleProviderSelect(item.id)}
                       >
-                        Atualizar
+                        Definir como padrão
                       </button>
-                    </div>
+                    )}
                   </div>
-                </div>
-              ))}
-            </div>
-          </section>
 
-          <section className="glass-panel rounded-2xl p-6">
-            <div className="flex items-center justify-between">
-              <div className="space-y-1">
-                <h3 className="text-lg font-semibold text-white">Rotas com IA no app</h3>
-                <p className="text-sm text-gray-400">
-                  Controle quais experiências estão liberadas para produção.
-                </p>
-              </div>
-              <StatusPill label="4 rotas ativas" tone="emerald" />
-            </div>
-
-            <div className="mt-5 grid gap-3 md:grid-cols-2">
-              {[
-                { title: 'Templates rápidos', detail: '/api/ai/generate-template', on: true },
-                { title: 'Templates utility + Judge', detail: '/api/ai/generate-utility-templates', on: true },
-                { title: 'MiniApp Form Builder', detail: '/api/ai/generate-flow-form', on: true },
-                { title: 'Workflow Builder', detail: '/api/builder/ai/generate', on: false },
-              ].map((item) => (
-                <div key={item.title} className="rounded-xl border border-white/10 bg-zinc-900/60 p-4">
-                  <div className="flex items-center justify-between gap-3">
-                    <div>
-                      <div className="text-sm font-medium text-white">{item.title}</div>
-                      <div className="text-xs text-gray-500">{item.detail}</div>
+                  {isActive && (
+                    <div className="mt-4">
+                      <label className="text-xs text-gray-500">Selecionar modelo</label>
+                      <div className="relative mt-2">
+                        <select
+                          value={model}
+                          onChange={(event) => setModel(event.target.value)}
+                          className="w-full rounded-lg border border-white/10 bg-black/40 px-3 py-2 text-sm text-white outline-none transition focus:border-emerald-500/40"
+                        >
+                          {primaryModelOptions.map((modelOption) => (
+                            <option key={modelOption.id} value={modelOption.id}>
+                              {modelOption.name}
+                            </option>
+                          ))}
+                        </select>
+                      </div>
                     </div>
-                    <MockSwitch on={item.on} />
-                  </div>
+                  )}
                 </div>
-              ))}
-            </div>
-          </section>
+              )
+            })}
+          </div>
+        </section>
 
-          <section className="glass-panel rounded-2xl p-6">
-            <div className="flex items-center justify-between">
-              <div className="space-y-1">
-                <h3 className="text-lg font-semibold text-white">Governança e segurança</h3>
-                <p className="text-sm text-gray-400">
-                  Políticas de privacidade, logging, limites e compliance.
-                </p>
-              </div>
-              <ShieldCheck className="size-5 text-emerald-300" />
+        <section className="glass-panel rounded-2xl p-6">
+          <div className="flex items-center justify-between">
+            <div className="space-y-1">
+              <h3 className="text-lg font-semibold text-white">Rotas com IA no app</h3>
+              <p className="text-sm text-gray-400">Escolha o que vai para produção.</p>
             </div>
+            <StatusPill
+              label={`${activeRoutesCount} ativas`}
+              tone={activeRoutesCount > 0 ? 'emerald' : 'zinc'}
+            />
+          </div>
 
-            <div className="mt-5 space-y-4">
-              {[
-                { title: 'Mascarar PII automaticamente', helper: 'Remove telefones, nomes e IDs antes do prompt.', on: true },
-                { title: 'Logs completos de prompts', helper: 'Retenção de 14 dias com expurgo automático.', on: true },
-                { title: 'Modo seguro para templates', helper: 'Bloqueia termos proibidos na Meta.', on: true },
-                { title: 'Limites de custo por workspace', helper: 'Dispara alertas ao atingir 80% do orçamento.', on: false },
-              ].map((item) => (
-                <div key={item.title} className="flex items-center justify-between gap-4 rounded-xl border border-white/10 bg-zinc-900/60 p-4">
+          <div className="mt-5 grid gap-3 md:grid-cols-2">
+            {ROUTE_ITEMS.map((item) => (
+              <div
+                key={item.key}
+                className="rounded-xl border border-white/10 bg-zinc-900/60 p-4"
+              >
+                <div className="flex items-center justify-between gap-3">
                   <div>
                     <div className="text-sm font-medium text-white">{item.title}</div>
-                    <div className="text-xs text-gray-500">{item.helper}</div>
+                    <div className="text-xs text-gray-500">{item.detail}</div>
                   </div>
-                  <MockSwitch on={item.on} />
+                  <MockSwitch
+                    on={routes[item.key]}
+                    onToggle={(next) => {
+                      setRoutes((current) => ({ ...current, [item.key]: next }))
+                    }}
+                    disabled={isLoading}
+                  />
                 </div>
-              ))}
-            </div>
-          </section>
+              </div>
+            ))}
+          </div>
+        </section>
 
-          <section className="glass-panel rounded-2xl p-6">
-            <div className="flex flex-wrap items-center justify-between gap-4">
-              <div className="space-y-1">
-                <div className="flex items-center gap-2 text-sm font-semibold text-white">
-                  <Wand2 className="size-4 text-emerald-300" />
-                  Prompts do sistema
+        <section id="advanced-settings" className="glass-panel rounded-2xl p-6">
+          <details className="group">
+            <summary className="cursor-pointer list-none flex items-center justify-between gap-3">
+              <div>
+                <div className="text-xs text-gray-500">Quando precisar ir fundo</div>
+                <div className="mt-1 text-sm text-white">Ajustes avançados</div>
+              </div>
+              <ChevronDown size={16} className="text-gray-400" />
+            </summary>
+
+            <div className="mt-5 space-y-6">
+              <div className="rounded-2xl border border-white/10 bg-zinc-900/60 p-6">
+                <div className="flex items-start justify-between gap-4">
+                  <div className="space-y-1">
+                    <h3 className="text-base font-semibold text-white">Chaves e origem</h3>
+                    <p className="text-sm text-gray-400">
+                      Onde as chaves ficam e quem pode editar.
+                    </p>
+                  </div>
+                  <button
+                    type="button"
+                    className="h-9 rounded-lg border border-white/10 bg-white/5 px-3 text-xs font-medium text-white transition hover:bg-white/10"
+                  >
+                    Permissões
+                  </button>
                 </div>
-                <p className="text-sm text-gray-400">
-                  Ajuste o texto dos prompts para cada fluxo de IA sem sair desta tela.
-                </p>
-              </div>
-              <div className="rounded-full border border-emerald-500/30 bg-emerald-500/10 px-3 py-1 text-xs text-emerald-300">
-                5 prompts configuráveis
-              </div>
-            </div>
 
-            <div className="mt-5 space-y-4">
-              {PROMPTS.map((item) => (
-                <PromptCard key={item.id} item={item} />
-              ))}
-            </div>
-          </section>
-        </div>
+                <div className="mt-5 space-y-3">
+                  {AI_PROVIDERS.map((item) => {
+                    const status = providerStatuses[item.id] ?? EMPTY_PROVIDER_STATUS
+                    const sourceLabel =
+                      status.source === 'database'
+                        ? 'Banco (Supabase)'
+                        : status.source === 'env'
+                          ? 'Env var'
+                          : '—'
+                    const previewLabel = status.tokenPreview
+                      ? `${status.tokenPreview} · ${sourceLabel}`
+                      : sourceLabel
+                    const isEditing = editingKeyProvider === item.id
+                    const isActiveProvider = provider === item.id
+                    const statusLabel = status.isConfigured
+                      ? isActiveProvider
+                        ? 'Em uso'
+                        : 'Disponível'
+                      : 'Inativa'
+                    const statusTone =
+                      status.isConfigured && isActiveProvider
+                        ? 'emerald'
+                        : status.isConfigured
+                          ? 'zinc'
+                          : 'amber'
+                    return (
+                      <div
+                        key={item.id}
+                        className="rounded-xl border border-white/10 bg-black/40 p-4"
+                      >
+                        <div className="flex flex-wrap items-center justify-between gap-4">
+                          <div>
+                            <div className="text-sm font-medium text-white">{item.name} API Key</div>
+                            <div className="mt-1 text-xs text-gray-400">{previewLabel}</div>
+                          </div>
+                          <div className="flex items-center gap-2">
+                            <StatusPill label={statusLabel} tone={statusTone} />
+                            <button
+                              type="button"
+                              className="rounded-lg border border-white/10 bg-white/5 px-3 py-1.5 text-xs text-white transition hover:bg-white/10"
+                              onClick={() =>
+                                setEditingKeyProvider((current) =>
+                                  current === item.id ? null : item.id
+                                )
+                              }
+                            >
+                              {isEditing ? 'Cancelar' : 'Atualizar'}
+                            </button>
+                          </div>
+                        </div>
 
-        <div className="space-y-6">
-          <section className="glass-panel rounded-2xl p-6">
-            <div className="flex items-center justify-between">
-              <div>
-                <h3 className="text-lg font-semibold text-white">Playground rápido</h3>
-                <p className="text-sm text-gray-400">Teste prompts com o modelo ativo.</p>
-              </div>
-              <button
-                type="button"
-                className="inline-flex items-center gap-2 rounded-lg border border-white/10 bg-white/5 px-3 py-1.5 text-xs text-white transition hover:bg-white/10"
-              >
-                <Play className="size-3" />
-                Executar
-              </button>
-            </div>
-
-            <div className="mt-4 space-y-3">
-              <div className="rounded-xl border border-white/10 bg-black/50 p-3 text-xs text-gray-400">
-                Prompt: Crie um template de confirmação de inscrição para evento com tom neutro.
-              </div>
-              <div className="rounded-xl border border-white/10 bg-zinc-900/70 p-3 text-xs text-gray-300">
-                {`Saída: “Olá {{1}}, sua inscrição para {{2}} foi confirmada. O evento começa em {{3}} às {{4}}. Acesse {{5}} para detalhes.”`}
-              </div>
-            </div>
-          </section>
-
-          <section className="glass-panel rounded-2xl p-6">
-            <div className="flex items-center justify-between">
-              <div>
-                <h3 className="text-lg font-semibold text-white">Observabilidade</h3>
-                <p className="text-sm text-gray-400">Indicadores dos últimos 7 dias.</p>
-              </div>
-              <button
-                type="button"
-                className="rounded-lg border border-white/10 bg-white/5 px-3 py-1.5 text-xs text-white transition hover:bg-white/10"
-              >
-                Ver painel completo
-              </button>
-            </div>
-
-            <div className="mt-4 grid gap-3">
-              <Metric label="Chamadas totais" value="18.420" helper="+12% vs. semana anterior" />
-              <Metric label="Custo médio por geração" value="R$ 0,021" helper="Meta: R$ 0,03" />
-              <Metric label="Erros por 1k requests" value="2,1" helper="Auto-retry habilitado" />
-            </div>
-          </section>
-
-          <section className="glass-panel rounded-2xl p-6">
-            <div className="flex items-center justify-between">
-              <div>
-                <h3 className="text-lg font-semibold text-white">Laboratório</h3>
-                <p className="text-sm text-gray-400">
-                  Experimentos com prompts, A/B de modelos e ajustes finos.
-                </p>
-              </div>
-              <Beaker className="size-5 text-sky-300" />
-            </div>
-
-            <div className="mt-4 space-y-3">
-              {[
-                { title: 'A/B templates utility', status: 'Rodando · 58% vitória B' },
-                { title: 'Prompt anti-rejeição Meta', status: 'Aprovado para rollout' },
-                { title: 'Modelo rápido para flows', status: 'Em rascunho' },
-              ].map((item) => (
-                <div key={item.title} className="rounded-xl border border-white/10 bg-zinc-900/60 p-4">
-                  <div className="text-sm font-medium text-white">{item.title}</div>
-                  <div className="mt-1 text-xs text-gray-500">{item.status}</div>
-                </div>
-              ))}
-              <button
-                type="button"
-                className="w-full rounded-xl border border-dashed border-white/20 bg-white/5 py-3 text-xs font-medium text-white transition hover:bg-white/10"
-              >
-                Criar experimento
-              </button>
-            </div>
-          </section>
-
-          <section className="glass-panel rounded-2xl p-6">
-            <div className="flex items-center justify-between">
-              <div>
-                <h3 className="text-lg font-semibold text-white">Integrações avançadas</h3>
-                <p className="text-sm text-gray-400">AI Gateway, logs e exportações.</p>
-              </div>
-              <ExternalLink className="size-4 text-gray-400" />
-            </div>
-
-            <div className="mt-4 space-y-3">
-              {[
-                { title: 'AI Gateway Vercel', detail: 'Chave gerenciada ativa', on: true, icon: Database },
-                { title: 'Exportar logs para BigQuery', detail: 'Pipeline noturno', on: false, icon: Activity },
-                { title: 'Webhooks de auditoria', detail: 'Slack + SIEM', on: true, icon: KeyRound },
-              ].map((item) => {
-                const Icon = item.icon
-                return (
-                  <div key={item.title} className="flex items-center justify-between rounded-xl border border-white/10 bg-zinc-900/60 p-4">
-                    <div className="flex items-center gap-3">
-                      <div className="rounded-lg border border-white/10 bg-white/5 p-2 text-white">
-                        <Icon className="size-4" />
+                        {isEditing && (
+                          <div className="mt-4 flex flex-wrap items-center gap-3">
+                            <input
+                              type="password"
+                              placeholder="Chave de API"
+                              value={apiKeyDrafts[item.id]}
+                              onChange={(event) =>
+                                setApiKeyDrafts((current) => ({
+                                  ...current,
+                                  [item.id]: event.target.value,
+                                }))
+                              }
+                              className="min-w-[220px] flex-1 rounded-lg border border-white/10 bg-black/50 px-3 py-2 text-sm text-white outline-none transition focus:border-emerald-500/40"
+                            />
+                            <button
+                              type="button"
+                              className="rounded-lg bg-white px-4 py-2 text-xs font-semibold text-zinc-900 transition hover:bg-gray-100 disabled:cursor-not-allowed disabled:opacity-60"
+                              onClick={() => handleSaveKey(item.id)}
+                              disabled={isSavingKey || !apiKeyDrafts[item.id].trim()}
+                            >
+                              {isSavingKey ? 'Salvando...' : 'Salvar chave'}
+                            </button>
+                          </div>
+                        )}
                       </div>
-                      <div>
-                        <div className="text-sm font-medium text-white">{item.title}</div>
-                        <div className="text-xs text-gray-500">{item.detail}</div>
-                      </div>
+                    )
+                  })}
+                </div>
+              </div>
+
+              <div className="rounded-2xl border border-white/10 bg-zinc-900/60 p-6">
+                <div className="flex flex-wrap items-start justify-between gap-4">
+                  <div className="space-y-1">
+                    <h3 className="text-base font-semibold text-white">Fallback inteligente</h3>
+                    <p className="text-sm text-gray-400">
+                      Ativa um segundo modelo quando o principal falhar.
+                    </p>
+                  </div>
+                  <MockSwitch
+                    on={fallback.enabled}
+                    onToggle={(next) =>
+                      setFallback((current) => ({ ...current, enabled: next }))
+                    }
+                    label="Ativar fallback"
+                  />
+                </div>
+
+                <div className="mt-4 grid gap-4 md:grid-cols-2">
+                  <div>
+                    <label className="text-xs text-gray-500">Provider</label>
+                    <select
+                      value={fallback.provider}
+                      onChange={(event) =>
+                        handleFallbackProviderSelect(event.target.value as AIProvider)
+                      }
+                      disabled={!fallback.enabled}
+                      className="mt-2 w-full rounded-lg border border-white/10 bg-black/40 px-3 py-2 text-sm text-white outline-none transition focus:border-emerald-500/40 disabled:cursor-not-allowed disabled:opacity-60"
+                    >
+                      {AI_PROVIDERS.map((providerOption) => (
+                        <option key={providerOption.id} value={providerOption.id}>
+                          {providerOption.name}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                  <div>
+                    <label className="text-xs text-gray-500">Modelo</label>
+                    <select
+                      value={fallback.model}
+                      onChange={(event) =>
+                        setFallback((current) => ({
+                          ...current,
+                          model: event.target.value,
+                        }))
+                      }
+                      disabled={!fallback.enabled}
+                      className="mt-2 w-full rounded-lg border border-white/10 bg-black/40 px-3 py-2 text-sm text-white outline-none transition focus:border-emerald-500/40 disabled:cursor-not-allowed disabled:opacity-60"
+                    >
+                      {fallbackModelOptions.map((modelOption) => (
+                        <option key={modelOption.id} value={modelOption.id}>
+                          {modelOption.name}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                </div>
+              </div>
+
+              <div className="rounded-2xl border border-white/10 bg-zinc-900/60 p-6">
+                <div className="flex flex-wrap items-center justify-between gap-4">
+                  <div className="space-y-1">
+                    <div className="flex items-center gap-2 text-sm font-semibold text-white">
+                      <Wand2 className="size-4 text-emerald-300" />
+                      Prompts do sistema
                     </div>
-                    <MockSwitch on={item.on} />
+                    <p className="text-sm text-gray-400">Edite os prompts sem sair daqui.</p>
                   </div>
-                )
-              })}
+                  <div className="rounded-full border border-emerald-500/30 bg-emerald-500/10 px-3 py-1 text-xs text-emerald-300">
+                    {PROMPTS.length} prompts configuráveis
+                  </div>
+                </div>
+
+                <div className="mt-5 space-y-4">
+                  {PROMPTS.map((item) => (
+                    <PromptCard
+                      key={item.id}
+                      item={item}
+                      value={prompts[item.valueKey] ?? ''}
+                      onChange={(nextValue) =>
+                        setPrompts((current) => ({
+                          ...current,
+                          [item.valueKey]: nextValue,
+                        }))
+                      }
+                    />
+                  ))}
+                </div>
+              </div>
             </div>
-          </section>
-        </div>
+          </details>
+        </section>
       </div>
     </Page>
   )

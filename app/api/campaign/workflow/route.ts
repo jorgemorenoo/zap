@@ -1436,6 +1436,7 @@ export const { POST } = serve<CampaignWorkflowInput>(
                 parameterFormat: (activeTemplate as any).parameter_format || (activeTemplate as any).parameterFormat || 'positional',
                 values: valuesForSend,
                 template: activeTemplate as any,
+                campaignId,
               })
             } catch (e) {
               const reason = e instanceof Error ? e.message : String(e)
@@ -1611,6 +1612,7 @@ export const { POST } = serve<CampaignWorkflowInput>(
                         (activeTemplate1 as any).parameter_format || (activeTemplate1 as any).parameterFormat || 'positional',
                       values: valuesForSend,
                       template: activeTemplate1 as any,
+                      campaignId,
                     })
 
                     const retryStart = Date.now()
@@ -1743,6 +1745,7 @@ export const { POST } = serve<CampaignWorkflowInput>(
                         (patched as any).parameter_format || (patched as any).parameterFormat || 'positional',
                       values: valuesForSend,
                       template: patched as any,
+                      campaignId,
                     })
 
                     const retryStart = Date.now()

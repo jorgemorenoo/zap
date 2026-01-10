@@ -1,5 +1,6 @@
+import type { AiFallbackConfig, AiPromptsConfig, AiRoutesConfig } from '../lib/ai/ai-center-defaults';
 import { storage } from '../lib/storage';
-import { AppSettings } from '../types';
+import { AppSettings, CalendarBookingConfig } from '../types';
 
 export const settingsService = {
   /**
@@ -226,7 +227,15 @@ export const settingsService = {
   /**
    * Save AI settings
    */
-  saveAIConfig: async (data: { apiKey?: string; provider?: string; model?: string }) => {
+  saveAIConfig: async (data: {
+    apiKey?: string;
+    apiKeyProvider?: string;
+    provider?: string;
+    model?: string;
+    routes?: AiRoutesConfig;
+    prompts?: AiPromptsConfig;
+    fallback?: AiFallbackConfig;
+  }) => {
     const response = await fetch('/api/settings/ai', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -364,5 +373,32 @@ export const settingsService = {
     }
 
     return json
+  },
+
+  // =============================================================================
+  // CALENDAR BOOKING CONFIG (Google Calendar)
+  // =============================================================================
+
+  getCalendarBookingConfig: async (): Promise<{
+    ok: boolean;
+    source: 'db' | 'default';
+    config: CalendarBookingConfig;
+  }> => {
+    const response = await fetch('/api/settings/calendar-booking', { cache: 'no-store' })
+    if (!response.ok) throw new Error('Failed to fetch calendar booking config')
+    return response.json()
+  },
+
+  saveCalendarBookingConfig: async (data: Partial<CalendarBookingConfig>): Promise<void> => {
+    const response = await fetch('/api/settings/calendar-booking', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(data),
+    })
+
+    const json = await response.json().catch(() => ({}))
+    if (!response.ok) {
+      throw new Error((json as any)?.error || 'Failed to save calendar booking config')
+    }
   },
 };

@@ -355,6 +355,27 @@ const BUTTON_ICONS: Record<string, React.ReactNode> = {
   'SPM': <MessageSquare size={14} />,
 };
 
+const isHttpUrl = (value: string) => /^https?:\/\//i.test(String(value || '').trim())
+
+const getHeaderExampleUrl = (header?: TemplateComponent): string | null => {
+  if (!header) return null
+  const format = header.format ? String(header.format).toUpperCase() : ''
+  if (!['IMAGE', 'VIDEO', 'DOCUMENT', 'GIF'].includes(format)) return null
+
+  let exampleObj: any = header.example
+  if (typeof exampleObj === 'string') {
+    try {
+      exampleObj = JSON.parse(exampleObj)
+    } catch {
+      exampleObj = undefined
+    }
+  }
+  const arr = exampleObj?.header_handle
+  const candidate = Array.isArray(arr) ? arr.find((item: any) => typeof item === 'string' && item.trim()) : null
+  if (!candidate) return null
+  return isHttpUrl(candidate) ? String(candidate).trim() : null
+}
+
 // ============================================================================
 // SUB-COMPONENTS
 // ============================================================================
@@ -392,6 +413,7 @@ const MessageHeader: React.FC<MessageHeaderProps> = ({
   variant = 'whatsapp',
 }) => {
   const format = String(header.format || '').toUpperCase()
+  const resolvedHeaderMediaPreviewUrl = headerMediaPreviewUrl || getHeaderExampleUrl(header)
 
   switch (format) {
     case 'TEXT':
@@ -414,9 +436,9 @@ const MessageHeader: React.FC<MessageHeaderProps> = ({
     case 'IMAGE':
       return (
         <div className="bg-[#202c33] rounded-lg rounded-tl-none shadow-sm mb-1 overflow-hidden">
-          {headerMediaPreviewUrl ? (
+          {resolvedHeaderMediaPreviewUrl ? (
             <img
-              src={headerMediaPreviewUrl}
+              src={resolvedHeaderMediaPreviewUrl}
               alt="Prévia da mídia do cabeçalho"
               className="w-full h-auto"
               loading="lazy"
@@ -432,9 +454,9 @@ const MessageHeader: React.FC<MessageHeaderProps> = ({
     case 'GIF':
       return (
         <div className="bg-[#202c33] rounded-lg rounded-tl-none shadow-sm mb-1 overflow-hidden">
-          {headerMediaPreviewUrl ? (
+          {resolvedHeaderMediaPreviewUrl ? (
             <video
-              src={headerMediaPreviewUrl}
+              src={resolvedHeaderMediaPreviewUrl}
               className="w-full h-auto"
               muted
               controls
@@ -450,9 +472,9 @@ const MessageHeader: React.FC<MessageHeaderProps> = ({
     case 'DOCUMENT':
       return (
         <div className="bg-[#202c33] rounded-lg rounded-tl-none shadow-sm mb-1 p-3">
-          {headerMediaPreviewUrl ? (
+          {resolvedHeaderMediaPreviewUrl ? (
             <a
-              href={headerMediaPreviewUrl}
+              href={resolvedHeaderMediaPreviewUrl}
               target="_blank"
               rel="noreferrer"
               className="flex items-center gap-2 text-zinc-200 hover:text-white transition-colors"

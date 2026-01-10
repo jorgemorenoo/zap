@@ -512,10 +512,18 @@ function mapButtonSubType(buttonType?: TemplateButton['type']): string | null {
   }
 }
 
-function generateFlowToken(flowId?: string): string {
+function generateFlowToken(flowId?: string, campaignId?: string): string {
   const seed = Math.random().toString(36).slice(2, 8)
   const stamp = Date.now().toString(36)
-  return `smartzap:${flowId || 'flow'}:${stamp}:${seed}`
+  const suffix = campaignId ? `:c:${campaignId}` : ''
+  return `smartzap:${flowId || 'flow'}:${stamp}:${seed}${suffix}`
+}
+
+function appendCampaignToFlowToken(token: string, campaignId?: string): string {
+  if (!campaignId) return token
+  if (token.includes(':c:')) return token
+  if (!token.startsWith('smartzap:')) return token
+  return `${token}:c:${campaignId}`
 }
 
 export function buildMetaTemplatePayload(input: {
@@ -525,8 +533,9 @@ export function buildMetaTemplatePayload(input: {
   parameterFormat: TemplateParameterFormat
   values: ResolvedTemplateValues
   template?: Template
+  campaignId?: string
 }): any {
-  const { to, templateName, language, parameterFormat, values, template } = input
+  const { to, templateName, language, parameterFormat, values, template, campaignId } = input
 
   const payload: any = {
     messaging_product: 'whatsapp',
@@ -654,7 +663,10 @@ export function buildMetaTemplatePayload(input: {
         const flowId =
           (entry.button.flow_id as string | undefined) ||
           ((entry.button.action as any)?.flow_id as string | undefined)
-        const flowToken = params[0]?.text?.trim() || generateFlowToken(flowId)
+        const rawFlowToken = params[0]?.text?.trim()
+        const flowToken = rawFlowToken
+          ? appendCampaignToFlowToken(rawFlowToken, campaignId)
+          : generateFlowToken(flowId, campaignId)
         const action: Record<string, unknown> = { flow_token: flowToken }
 
         const flowAction = (entry.button.action as any)?.flow_action

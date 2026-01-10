@@ -3,7 +3,7 @@
 import Link from 'next/link'
 import { useEffect, useMemo, useState } from 'react'
 import { toast } from 'sonner'
-import { ExternalLink, RefreshCw, Trash2, UploadCloud } from 'lucide-react'
+import { Download, ExternalLink, RefreshCw, Trash2, UploadCloud } from 'lucide-react'
 import { useQueryClient } from '@tanstack/react-query'
 
 import { Button } from '@/components/ui/button'
@@ -290,6 +290,9 @@ export function FlowPublishPanel({
                     const isPublishing = publishingId === flow.id
                     const isDeleting = deletingId === flow.id
                     const canTest = !!flow.meta_flow_id
+                    const exportHref = flow.meta_flow_id
+                      ? `/api/flows/submissions/report.csv?flowId=${encodeURIComponent(flow.meta_flow_id)}`
+                      : ''
                     return (
                       <tr key={flow.id} className="hover:bg-white/5 transition-colors">
                         <td className="px-4 py-3">
@@ -359,6 +362,19 @@ export function FlowPublishPanel({
                             >
                               Testar
                             </Button>
+                            {canTest ? (
+                              <Button size="sm" variant="outline" asChild>
+                                <a href={exportHref} download title="Baixar submissões do MiniApp">
+                                  <Download className="h-4 w-4" />
+                                  Submissões CSV
+                                </a>
+                              </Button>
+                            ) : (
+                              <Button size="sm" variant="outline" disabled>
+                                <Download className="h-4 w-4" />
+                                Submissões CSV
+                              </Button>
+                            )}
                             <Button
                               size="sm"
                               variant="ghost"

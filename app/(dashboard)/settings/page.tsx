@@ -107,6 +107,12 @@ export default function SettingsPage() {
             autoSuppressionLoading={controller.autoSuppressionLoading}
             saveAutoSuppression={controller.saveAutoSuppression}
             isSavingAutoSuppression={controller.isSavingAutoSuppression}
+
+            // Agendamento (Google Calendar)
+            calendarBooking={controller.calendarBooking}
+            calendarBookingLoading={controller.calendarBookingLoading}
+            saveCalendarBooking={controller.saveCalendarBooking}
+            isSavingCalendarBooking={controller.isSavingCalendarBooking}
             hideHeader
           />
         </div>

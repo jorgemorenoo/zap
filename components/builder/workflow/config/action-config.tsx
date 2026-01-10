@@ -3,6 +3,7 @@
 import { useAtomValue, useSetAtom } from "jotai";
 import { HelpCircle, Plus, Settings } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
+import { useQuery } from "@tanstack/react-query";
 import { ConfigureConnectionOverlay } from "@/components/builder/overlays/add-connection-overlay";
 import { AiGatewayConsentOverlay } from "@/components/builder/overlays/ai-gateway-consent-overlay";
 import { useOverlay } from "@/components/builder/overlays/overlay-provider";
@@ -37,7 +38,10 @@ import {
   findActionById,
   getActionsByCategory,
   getAllIntegrations,
+  isFieldGroup,
+  type ActionConfigField,
 } from "@/lib/builder/plugins";
+import { templateService } from "@/services/templateService";
 import { ActionConfigRenderer } from "./action-config-renderer";
 import { SchemaBuilder, type SchemaField } from "./schema-builder";
 import { WhatsAppPreview } from "./whatsapp-preview";
@@ -522,6 +526,52 @@ export function ActionConfig({
 
   // Get dynamic config fields for plugin actions
   const pluginAction = actionType ? findActionById(actionType) : null;
+  const isSendTemplateAction = pluginAction?.slug === "send-template";
+  const templateNameValue = String(config?.templateName || "");
+
+  const { data: templates = [], isLoading: templatesLoading } = useQuery({
+    queryKey: ["templates"],
+    queryFn: templateService.getAll,
+    enabled: Boolean(isSendTemplateAction),
+  });
+
+  const templateOptions = useMemo(() => {
+    const names = templates
+      .map((template) => String(template?.name || "").trim())
+      .filter(Boolean);
+    const unique = Array.from(new Set(names));
+    unique.sort((a, b) => a.localeCompare(b));
+    return unique.map((name) => ({ label: name, value: name }));
+  }, [templates]);
+
+  const templateOptionsWithCurrent = useMemo(() => {
+    if (!templateNameValue) return templateOptions;
+    const exists = templateOptions.some(
+      (option) => option.value === templateNameValue
+    );
+    if (exists) return templateOptions;
+    return [
+      { label: `${templateNameValue} (atual)`, value: templateNameValue },
+      ...templateOptions,
+    ];
+  }, [templateNameValue, templateOptions]);
+
+  const pluginFields: ActionConfigField[] = useMemo(() => {
+    if (!pluginAction) return [];
+    if (!isSendTemplateAction) return pluginAction.configFields;
+
+    return pluginAction.configFields
+      .map((field) => {
+        if (isFieldGroup(field)) {
+          return {
+            ...field,
+            fields: field.fields.filter((inner) => inner.key !== "templateName"),
+          };
+        }
+        return field;
+      })
+      .filter((field) => (isFieldGroup(field) ? true : field.key !== "templateName"));
+  }, [isSendTemplateAction, pluginAction]);
 
   // Determine the integration type for the current action
   const integrationType: IntegrationType | undefined = useMemo(() => {
@@ -697,10 +747,52 @@ export function ActionConfig({
       {/* Plugin actions - declarative config fields */}
       {pluginAction && !SYSTEM_ACTION_IDS.includes(actionType) && (
         <div className="space-y-4">
+          {isSendTemplateAction && (
+            <div className="space-y-2">
+              <Label className="ml-1" htmlFor="templateName">
+                Nome do template
+              </Label>
+              {templateOptionsWithCurrent.length > 0 ? (
+                <Select
+                  disabled={disabled}
+                  onValueChange={(value) => onUpdateConfig("templateName", value)}
+                  value={templateNameValue}
+                >
+                  <SelectTrigger className="w-full" id="templateName">
+                    <SelectValue placeholder="Selecione o template" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {templateOptionsWithCurrent.map((option) => (
+                      <SelectItem key={option.value} value={option.value}>
+                        {option.label}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              ) : (
+                <Input
+                  disabled={disabled}
+                  id="templateName"
+                  onChange={(e) =>
+                    onUpdateConfig("templateName", e.target.value)
+                  }
+                  placeholder="welcome_message"
+                  value={templateNameValue}
+                />
+              )}
+              {templateOptionsWithCurrent.length === 0 &&
+                !templatesLoading && (
+                  <p className="text-muted-foreground text-xs">
+                    Nenhum template encontrado. Sincronize em Templates para
+                    popular a lista.
+                  </p>
+                )}
+            </div>
+          )}
           <ActionConfigRenderer
             config={config}
             disabled={disabled}
-            fields={pluginAction.configFields}
+            fields={pluginFields}
             onUpdateConfig={handlePluginUpdateConfig}
           />
           {pluginAction.integration === "whatsapp" && (

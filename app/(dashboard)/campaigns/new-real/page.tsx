@@ -187,7 +187,6 @@ export default function CampaignsNewRealPage() {
   const [batchFixIndex, setBatchFixIndex] = useState(0)
   const batchCloseReasonRef = useRef<'advance' | 'finish' | null>(null)
   const batchNextRef = useRef<{ contactId: string; focus: ContactFixFocus; title: string } | null>(null)
-  const previewMediaFetchRef = useRef<Set<string>>(new Set())
   const [campaignName, setCampaignName] = useState(() => {
     const now = new Date()
     const day = String(now.getDate()).padStart(2, '0')
@@ -1013,41 +1012,26 @@ export default function CampaignsNewRealPage() {
     return (activeTemplate?.components || []) as TemplateComponent[]
   }, [activeTemplate])
 
-  useEffect(() => {
-    if (!activeTemplate) return
-    if (activeTemplate.headerMediaPreviewUrl) return
-
+  const headerExampleUrl = useMemo(() => {
     const header = templateComponents.find((c) => c.type === 'HEADER')
-    const format = header?.format ? String(header.format).toUpperCase() : ''
-    const isMedia = ['IMAGE', 'VIDEO', 'DOCUMENT', 'GIF'].includes(format)
-    if (!isMedia) return
+    if (!header) return null
+    const format = header.format ? String(header.format).toUpperCase() : ''
+    if (!['IMAGE', 'VIDEO', 'DOCUMENT', 'GIF'].includes(format)) return null
 
-    const name = activeTemplate.name
-    if (!name || previewMediaFetchRef.current.has(name)) return
-    previewMediaFetchRef.current.add(name)
-
-    let cancelled = false
-    ;(async () => {
+    let exampleObj: any = header.example
+    if (typeof exampleObj === 'string') {
       try {
-        const details = await fetchJson<{ headerMediaPreviewUrl?: string | null }>(
-          `/api/templates/${encodeURIComponent(name)}`
-        )
-        if (cancelled || !details?.headerMediaPreviewUrl) return
-
-        const patch = (prev: Template | null) =>
-          prev && prev.name === name ? { ...prev, headerMediaPreviewUrl: details.headerMediaPreviewUrl } : prev
-
-        setSelectedTemplate((prev) => patch(prev))
-        setPreviewTemplate((prev) => patch(prev))
+        exampleObj = JSON.parse(exampleObj)
       } catch {
-        // best-effort
+        exampleObj = undefined
       }
-    })()
-
-    return () => {
-      cancelled = true
     }
-  }, [activeTemplate, templateComponents])
+    const arr = exampleObj?.header_handle
+    const candidate = Array.isArray(arr) ? arr.find((item: any) => typeof item === 'string' && item.trim()) : null
+    if (!candidate) return null
+    return /^https?:\/\//i.test(String(candidate || '').trim()) ? String(candidate).trim() : null
+  }, [templateComponents])
+
 
   const flattenedButtons = useMemo(() => {
     const out: Array<{ index: number; button: TemplateButton }> = []
@@ -2774,7 +2758,7 @@ export default function CampaignsNewRealPage() {
                       headerVariables={Array.isArray(resolvedHeader) ? resolvedHeader : undefined}
                       namedVariables={!Array.isArray(resolvedBody) && resolvedBody ? (resolvedBody as Record<string, string>) : undefined}
                       namedHeaderVariables={!Array.isArray(resolvedHeader) && resolvedHeader ? (resolvedHeader as Record<string, string>) : undefined}
-                      headerMediaPreviewUrl={activeTemplate.headerMediaPreviewUrl || null}
+                      headerMediaPreviewUrl={activeTemplate.headerMediaPreviewUrl || headerExampleUrl || null}
                       fallbackContent={activeTemplate.content || activeTemplate.preview}
                     />
                   </div>

@@ -220,6 +220,14 @@ export const useSettingsController = () => {
     retry: false,
   })
 
+  // Calendar Booking (Google Calendar)
+  const calendarBookingQuery = useQuery({
+    queryKey: ['calendarBookingConfig'],
+    queryFn: settingsService.getCalendarBookingConfig,
+    staleTime: 60 * 1000,
+    retry: false,
+  })
+
 
   // Available domains query (auto-detect from Vercel)
   const domainsQuery = useQuery({
@@ -334,6 +342,17 @@ export const useSettingsController = () => {
     },
     onError: (err: any) => {
       toast.error(err?.message || 'Erro ao salvar auto-supressão')
+    },
+  })
+
+  const saveCalendarBookingMutation = useMutation({
+    mutationFn: settingsService.saveCalendarBookingConfig,
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['calendarBookingConfig'] })
+      toast.success('Configuração de agendamento salva!')
+    },
+    onError: (err: any) => {
+      toast.error(err?.message || 'Erro ao salvar configuracao de agendamento')
     },
   })
 
@@ -735,6 +754,12 @@ export const useSettingsController = () => {
     autoSuppressionLoading: autoSuppressionQuery.isLoading,
     saveAutoSuppression: saveAutoSuppressionMutation.mutateAsync,
     isSavingAutoSuppression: saveAutoSuppressionMutation.isPending,
+
+    // Calendar Booking (Google Calendar)
+    calendarBooking: calendarBookingQuery.data || null,
+    calendarBookingLoading: calendarBookingQuery.isLoading,
+    saveCalendarBooking: saveCalendarBookingMutation.mutateAsync,
+    isSavingCalendarBooking: saveCalendarBookingMutation.isPending,
 
   };
 };  

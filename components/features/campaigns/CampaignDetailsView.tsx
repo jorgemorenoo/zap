@@ -678,6 +678,14 @@ export const CampaignDetailsView: React.FC<CampaignDetailsViewProps> = ({
           >
             <Download size={16} /> Relatório CSV
           </a>
+          <a
+            href={`/api/flows/submissions/report.csv?campaignId=${encodeURIComponent(campaign.id)}`}
+            download
+            className="px-4 py-2 bg-zinc-900 border border-white/10 rounded-lg text-gray-300 hover:text-white hover:bg-white/5 transition-colors flex items-center gap-2 text-sm font-medium"
+            title="Baixar submissões de MiniApps em CSV"
+          >
+            <Download size={16} /> Submissões MiniApp
+          </a>
         </div>
       </PageHeader>
 

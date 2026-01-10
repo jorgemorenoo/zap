@@ -1,13 +1,14 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { z } from 'zod'
 import { validateBody, formatZodErrors } from '@/lib/api-validation'
-import { ai, generateText, generateJSON } from '@/lib/ai'
+import { generateText, generateJSON } from '@/lib/ai'
 import { judgeTemplates } from '@/lib/ai/services/ai-judge'
-import { generateTemplatesWithAgent } from '@/lib/ai/services/template-agent'
+import { buildUtilityGenerationPrompt } from '@/lib/ai/prompts/utility-generator'
 import { supabase } from '@/lib/supabase'
+import { getAiPromptsConfig, isAiRouteEnabled } from '@/lib/ai/ai-center-config'
 
 // ============================================================================
-// SISTEMA COM TEMPLATE AGENT - Gera templates UTILITY usando exemplos oficiais
+// PROMPT ÚNICO - Gera templates UTILITY
 // ============================================================================
 
 // Schema de entrada
@@ -17,8 +18,6 @@ export const GenerateUtilityTemplatesSchema = z.object({
     .max(2000, 'Descrição muito longa'),
   quantity: z.number().int().min(1).max(20).default(5),
   language: z.enum(['pt_BR', 'en_US', 'es_ES']).default('pt_BR'),
-  useAgent: z.boolean().default(true), // NEW: Use Template Agent by default
-  strategy: z.enum(['marketing', 'utility', 'bypass']).default('bypass') // NEW: AI Strategy
 })
 
 const languageMap: Record<string, string> = {
@@ -26,128 +25,6 @@ const languageMap: Record<string, string> = {
   en_US: 'inglês americano',
   es_ES: 'espanhol'
 }
-
-// ============================================================================
-// PROMPT ÚNICO - GERA TEMPLATES UTILITY DIRETAMENTE
-// ============================================================================
-
-function buildUtilityPrompt(userPrompt: string, quantity: number, language: string, primaryUrl: string | null): string {
-  return `Você é especialista em templates WhatsApp Business API categoria UTILITY.
-
-## OBJETIVO
-Criar templates que serão APROVADOS como UTILITY (não MARKETING) pela Meta.
-
-## 🔑 ESTRATÉGIA PRINCIPAL: USE VARIÁVEIS PARA MASCARAR CONTEÚDO
-
-A Meta analisa apenas a ESTRUTURA do template, não os valores das variáveis.
-SUBSTITUA conteúdo potencialmente promocional por variáveis!
-
-### EXEMPLOS DE TRANSFORMAÇÃO:
-❌ "boleto parcelado estará disponível" → MARKETING!
-✅ "{{1}} estará disponível" → UTILITY! (onde {{1}}="boleto parcelado")
-
-❌ "23 vagas foram liberadas" → MARKETING!
-✅ "{{1}} foram liberadas" → UTILITY! (onde {{1}}="23 vagas")
-
-❌ "quarta-feira às 19h" → Pode parecer urgência
-✅ "{{1}} às {{2}}" → UTILITY! (onde {{1}}="quarta-feira", {{2}}="19h")
-
-### O QUE DEVE SER VARIÁVEL:
-- Datas e horários: {{1}} (quarta-feira), {{2}} (19h)
-- Quantidades: {{3}} (23 vagas, 10 unidades)
-- Formas de pagamento: {{4}} (boleto, parcelado)
-- Nome do produto/curso: {{1}} (Escola de Automação)
-- Qualquer coisa que possa parecer oferta/urgência
-
-### EXEMPLOS BONS:
-"Informamos que {{1}} para {{2}} estão disponíveis. O acesso será liberado em {{3}} às {{4}}."
-"Comunicamos que o processo para {{1}} será iniciado em {{2}}. Detalhes sobre {{3}} serão informados."
-
-## 🚫 PROIBIDO HARDCODED (use variável no lugar):
-
-### Escassez (NUNCA hardcode isso)
-exclusivo, limitado, apenas X, restam, últimas, poucas
-→ Substitua por {{X}}
-
-### Urgência (NUNCA hardcode datas/horários específicos)
-só hoje, nesta quarta, dia 10/12, às 19h
-→ Substitua por {{X}}
-
-### Promocional (NUNCA hardcode formas de pagamento)
-boleto, parcelado, desconto, grátis, oferta
-→ Substitua por {{X}} ou "Método de Acesso"
-
-### Cobrança/Spam (Meta odeia)
-regularização, pendência, dívida, urgente, boleto
-→ Substitua por "Atualização", "Processo", "Status" ou variável {{X}}
-
-### CTA Agressivo (NUNCA use)
-garanta já, aproveite agora, compre agora
-
-## ✅ PERMITIDO - USE ESTA LINGUAGEM:
-
-### Tom Informativo
-"Informamos que...", "Notificamos sobre...", "Confirmamos..."
-"Identificamos...", "Atualizamos...", "Comunicamos..."
-
-### Botões Neutros
-"Ver Detalhes", "Acessar", "Saber Mais", "Visualizar", "Acompanhar"
-
-## 🛡️ ESTRATÉGIA DE SUBSTITUIÇÃO (VARIÁVEIS)
-Se identificar "Boleto", "Vagas", "Curso X":
-1. MANTENHA a frase, mas TROQUE a palavra "proibida" por {{N}}.
-2. Ex: "Pague seu boleto" -> "Visualize seu {{2}}".
-3. Ex: "Acesso à Escola" -> "Acesso ao {{3}}".
-4. O objetivo é que a Meta aprove a ESTRUTURA. O conteúdo real vai na variável depois.
-
-## 📌 HEADERS - REGRAS
-✅ Headers DIRETOS e NATURAIS:
-- "Vagas disponíveis – {{1}}"
-- "Atualização: {{1}}"
-- "Nova data: {{1}}"
-- "Informação sobre {{1}}"
-
-## REGRAS TÉCNICAS
-- Variáveis: APENAS números {{1}}, {{2}}, {{3}} (sequenciais, sem pular)
-- Use PELO MENOS 2-3 variáveis por template para flexibilidade
-- 🚫 NUNCA comece ou termine o texto com variável (ex: "{{1}} chegou" ou "...para {{2}}"). Meta rejeita.
-- ✅ Sempre envolva variáveis com texto (ex: "Olá {{1}}, seu pedido..." ou "...para {{2}} em breve.").
-- Header: máximo 1 variável, máximo 60 caracteres
-- Body: máximo 1024 caracteres (ideal: 200-400)
-- Footer: máximo 60 caracteres
-- Botão: máximo 25 caracteres
-- Nome: snake_case, apenas letras minúsculas e underscore
-- ⚠️ NUNCA comece/termine o texto com variável
-- ⚠️ EVITE emojis
-
-## INPUT DO USUÁRIO
-"${userPrompt}"
-
-## LINGUAGEM
-Escreva em ${language}.
-
-${primaryUrl ? `## URL DO BOTÃO\nO usuário forneceu: ${primaryUrl}\n⚠️ OBRIGATÓRIO usar este link em TODOS os templates!\n` : ''}
-
-## GERE ${quantity} TEMPLATES
-Todos DEVEM passar como UTILITY - maximize o uso de variáveis!
-Varie: tom (formal, casual), estrutura (com/sem header).
-
-## FORMATO JSON (retorne APENAS JSON válido, sem markdown)
-[
-  {
-    "name": "nome_snake_case",
-    "content": "Texto do body informativo e neutro",
-    "header": { "format": "TEXT", "text": "Header direto e natural" },
-    "footer": { "text": "Responda SAIR para não receber mais mensagens." },
-    "buttons": [
-      { "type": "URL", "text": "Ver Detalhes", "url": "${primaryUrl || 'https://exemplo.com/'}" }
-    ]
-  }
-]
-
-NOTA: header, footer e buttons são opcionais. Inclua quando fizer sentido.`
-}
-
 
 // ============================================================================
 // TIPO PARA TEMPLATE GERADO
@@ -299,13 +176,20 @@ function normalizeTemplate(
 // LEGACY GENERATION FUNCTION (fallback quando Agent não disponível)
 // ============================================================================
 
-async function generateWithLegacyPrompt(
+async function generateWithUnifiedPrompt(
   userPrompt: string,
   quantity: number,
   language: string,
-  primaryUrl: string | null
+  primaryUrl: string | null,
+  promptTemplate: string
 ): Promise<GeneratedTemplate[]> {
-  const utilityPrompt = buildUtilityPrompt(userPrompt, quantity, languageMap[language] || 'português brasileiro', primaryUrl)
+  const utilityPrompt = buildUtilityGenerationPrompt({
+    prompt: userPrompt,
+    quantity,
+    language: languageMap[language] || 'português brasileiro',
+    primaryUrl,
+    template: promptTemplate,
+  })
 
   const rawTemplates = await generateJSON<Array<Record<string, unknown>>>(
     { prompt: utilityPrompt }
@@ -322,6 +206,14 @@ async function generateWithLegacyPrompt(
 
 export async function POST(request: NextRequest) {
   try {
+    const routeEnabled = await isAiRouteEnabled('generateUtilityTemplates')
+    if (!routeEnabled) {
+      return NextResponse.json(
+        { error: 'Rota desativada nas configurações de IA.' },
+        { status: 403 }
+      )
+    }
+
     const body = await request.json()
     console.log('[API ROUTE] Received Body:', JSON.stringify(body, null, 2));
 
@@ -333,7 +225,7 @@ export async function POST(request: NextRequest) {
       )
     }
 
-    const { prompt: userPrompt, quantity, language, useAgent } = validation.data
+    const { prompt: userPrompt, quantity, language } = validation.data
 
     // Get API key from settings for both Agent and Judge
     let apiKey: string | null = null
@@ -355,39 +247,17 @@ export async function POST(request: NextRequest) {
       ? (detectedUrls[0].startsWith('http') ? detectedUrls[0] : `https://${detectedUrls[0]}`)
       : null
 
+    const promptsConfig = await getAiPromptsConfig()
     let templates: GeneratedTemplate[]
 
-    // ========================================================================
-    // TEMPLATE AGENT - Nova geração baseada em categorias e exemplos oficiais
-    // ========================================================================
-    if (useAgent && apiKey) {
-      console.log('[TEMPLATE_AGENT] Using new Agent-based generation...')
-
-      try {
-        const agentResult = await generateTemplatesWithAgent(
-          userPrompt,
-          quantity,
-          { apiKey, strategy: validation.data.strategy }
-        )
-
-        templates = agentResult.templates.map((t, index) =>
-          normalizeTemplate(t as unknown as Record<string, unknown>, index, language, primaryUrl)
-        )
-
-        console.log(`[TEMPLATE_AGENT] Generated ${templates.length} templates (category: ${agentResult.metadata.detectedCategory})`)
-
-      } catch (agentError) {
-        console.error('[TEMPLATE_AGENT] Failed, falling back to legacy:', agentError)
-        // Fall back to legacy generation
-        templates = await generateWithLegacyPrompt(userPrompt, quantity, language, primaryUrl)
-      }
-    } else {
-      // ========================================================================
-      // LEGACY GENERATION - Prompt direto (fallback)
-      // ========================================================================
-      console.log('[GENERATE] Using legacy prompt-based generation...')
-      templates = await generateWithLegacyPrompt(userPrompt, quantity, language, primaryUrl)
-    }
+    console.log('[GENERATE] Using unified prompt-based generation...')
+    templates = await generateWithUnifiedPrompt(
+      userPrompt,
+      quantity,
+      language,
+      primaryUrl,
+      promptsConfig.utilityGenerationTemplate
+    )
 
     // ========================================================================
     // AI JUDGE - Validar cada template
@@ -395,11 +265,7 @@ export async function POST(request: NextRequest) {
     let validatedTemplates = templates
 
     try {
-      // SKIP JUDGE IF STRATEGY IS MARKETING
-      // Marketing templates are expected to violate "Utility" rules (promotional content).
-      if (validation.data.strategy === 'marketing') {
-        console.log('[AI_JUDGE] Skipped for MARKETING strategy (User accepted marketing category)')
-      } else if (apiKey) {
+      if (apiKey) {
         console.log('[AI_JUDGE] Validating templates...')
 
         const judgments = await judgeTemplates(
