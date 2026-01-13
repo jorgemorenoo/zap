@@ -6,6 +6,7 @@ import { AppSettings, CalendarBookingConfig, WorkflowExecutionConfig } from '../
 import { AccountLimits } from '../../../lib/meta-limits';
 import { PhoneNumber } from '../../../hooks/useSettings';
 import { AISettings } from './AISettings';
+import { TestContactPanel } from './TestContactPanel';
 import type { AiFallbackConfig, AiPromptsConfig, AiRoutesConfig } from '../../../lib/ai/ai-center-defaults';
 import { formatPhoneNumberDisplay } from '../../../lib/phone-formatter';
 import { performanceService } from '../../../services/performanceService';
@@ -314,11 +315,6 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
   // Sem scroll automático, parece que o botão "Editar" não funcionou.
   const statusCardRef = useRef<HTMLDivElement | null>(null);
   const credentialsFormRef = useRef<HTMLDivElement | null>(null);
-
-  // Test contact editing
-  const [isEditingTestContact, setIsEditingTestContact] = useState(false);
-  const [testContactName, setTestContactName] = useState(testContact?.name || '');
-  const [testContactPhone, setTestContactPhone] = useState(testContact?.phone || '');
 
   // Webhook override editing
   const [editingPhoneId, setEditingPhoneId] = useState<string | null>(null);
@@ -1277,40 +1273,6 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
       setTimeout(() => setCopiedField(null), 2000);
     } catch {
       toast.error('Erro ao copiar');
-    }
-  };
-
-  const handleSaveTestContact = async () => {
-    if (!testContactPhone.trim()) {
-      toast.error('Preencha o telefone do contato de teste');
-      return;
-    }
-
-    if (!saveTestContact) {
-      toast.error('Função de salvar não disponível');
-      return;
-    }
-
-    try {
-      await saveTestContact({
-        name: testContactName.trim(),
-        phone: testContactPhone.trim(),
-      });
-      setIsEditingTestContact(false);
-    } catch {
-      // Error handled by mutation
-    }
-  };
-
-  const handleRemoveTestContact = async () => {
-    if (!removeTestContact) return;
-
-    try {
-      await removeTestContact();
-      setTestContactName('');
-      setTestContactPhone('');
-    } catch {
-      // Error handled by mutation
     }
   };
 
@@ -2598,99 +2560,12 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
 
         {/* Test Contact Section */}
         {settings.isConnected && (
-          <div className="glass-panel rounded-2xl p-8">
-            <h3 className="text-lg font-semibold text-white mb-4 flex items-center gap-2">
-              <span className="w-1 h-6 bg-amber-500 rounded-full"></span>
-              Contato de Teste
-            </h3>
-            <p className="text-sm text-gray-400 mb-6">
-              Configure um número para testar suas campanhas antes de enviar para todos os contatos.
-            </p>
-
-            {testContact && !isEditingTestContact ? (
-              // Show saved test contact
-              <div className="bg-amber-500/10 border border-amber-500/20 rounded-xl p-4 flex items-center justify-between">
-                <div className="flex items-center gap-4">
-                  <div className="p-3 bg-amber-500/20 rounded-xl">
-                    <UserCheck size={24} className="text-amber-400" />
-                  </div>
-                  <div>
-                    <p className="font-medium text-white">{testContact.name || 'Contato de Teste'}</p>
-                    <p className="text-sm text-amber-400 font-mono">{formatPhoneNumberDisplay(testContact.phone, 'international')}</p>
-                  </div>
-                </div>
-                <div className="flex items-center gap-2">
-                  <button
-                    onClick={() => {
-                      setTestContactName(testContact?.name || '');
-                      setTestContactPhone(testContact?.phone || '');
-                      setIsEditingTestContact(true);
-                    }}
-                    className="h-10 px-4 text-sm text-gray-400 hover:text-white hover:bg-white/5 rounded-lg transition-colors"
-                  >
-                    Editar
-                  </button>
-                  <button
-                    onClick={handleRemoveTestContact}
-                    className="h-10 w-10 flex items-center justify-center text-gray-400 hover:text-red-400 hover:bg-red-500/10 rounded-lg transition-colors"
-                  >
-                    <X size={16} />
-                  </button>
-                </div>
-              </div>
-            ) : (
-              // Form to add/edit test contact
-              <div className="space-y-4">
-                <div className="grid grid-cols-2 gap-4">
-                  <div>
-                    <label className="block text-sm font-medium text-gray-300 mb-2">
-                      Nome
-                    </label>
-                    <input
-                      type="text"
-                      value={testContactName}
-                      onChange={(e) => setTestContactName(e.target.value)}
-                      placeholder="Ex: Meu Teste"
-                      className="w-full px-4 py-3 bg-zinc-900/50 border border-white/10 rounded-xl focus:ring-2 focus:ring-amber-500/50 focus:border-amber-500/50 outline-none text-sm text-white transition-all"
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-sm font-medium text-gray-300 mb-2">
-                      Telefone (com código do país)
-                    </label>
-                    <input
-                      type="tel"
-                      value={testContactPhone}
-                      onChange={(e) => setTestContactPhone(e.target.value)}
-                      placeholder="Ex: +5511999999999"
-                      className="w-full px-4 py-3 bg-zinc-900/50 border border-white/10 rounded-xl focus:ring-2 focus:ring-amber-500/50 focus:border-amber-500/50 outline-none text-sm text-white font-mono transition-all"
-                    />
-                  </div>
-                </div>
-                <div className="flex justify-end gap-3">
-                  {isEditingTestContact && (
-                    <button
-                      onClick={() => {
-                        setIsEditingTestContact(false);
-                        setTestContactName(testContact?.name || '');
-                        setTestContactPhone(testContact?.phone || '');
-                      }}
-                      className="h-10 px-4 text-sm text-gray-400 hover:text-white transition-colors"
-                    >
-                      Cancelar
-                    </button>
-                  )}
-                  <button
-                    onClick={handleSaveTestContact}
-                    className="h-10 px-4 bg-amber-500 hover:bg-amber-400 text-black font-medium rounded-lg transition-colors flex items-center gap-2"
-                  >
-                    <Smartphone size={16} />
-                    Salvar Contato de Teste
-                  </button>
-                </div>
-              </div>
-            )}
-          </div>
+          <TestContactPanel
+            testContact={testContact}
+            saveTestContact={saveTestContact}
+            removeTestContact={removeTestContact}
+            isSaving={isSavingTestContact}
+          />
         )}
 
         {/* WhatsApp Turbo (Adaptive Throttle) */}
