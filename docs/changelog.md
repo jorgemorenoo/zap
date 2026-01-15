@@ -50,6 +50,15 @@
 - **🔐 Registro automático da chave pública**
   - `app/api/flows/[id]/meta/publish/route.ts` agora registra a chave pública na Meta antes de publicar flows dinâmicos
 
+- **📞 Registro de chave usa Phone Number ID**
+  - `lib/meta-flows-api.ts` agora usa `phone_number_id` no endpoint `whatsapp_business_encryption`
+
+- **🧾 Registro de chave com form-url-encoded**
+  - `lib/meta-flows-api.ts` envia `business_public_key` como `application/x-www-form-urlencoded`, conforme documentação da Meta
+
+- **✅ Endpoint reconhece notificações de erro**
+  - `lib/whatsapp/flow-endpoint-handlers.ts` responde `{ data: { acknowledged: true } }` quando recebe `data.error` do client
+
 ## 25/12/2025 - Debug (Run/Trace para campanhas)
 
 - **🔎 Timeline estruturada por `trace_id` (sem caçar logs)**

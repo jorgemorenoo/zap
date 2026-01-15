@@ -235,24 +235,25 @@ export async function metaGetFlowPreview(params: { accessToken: string; flowId: 
 
 /**
  * Registra a chave publica de criptografia para flows dinamicos (data_exchange)
- * Endpoint: POST /{WABA_ID}/whatsapp_business_encryption
+ * Endpoint: POST /{PHONE_NUMBER_ID}/whatsapp_business_encryption
  *
- * A chave precisa ser registrada uma vez por WABA para permitir flows dinamicos.
+ * A chave precisa ser registrada uma vez por numero para permitir flows dinamicos.
  */
 export async function metaSetEncryptionPublicKey(params: {
   accessToken: string
-  wabaId: string
+  phoneNumberId: string
   publicKey: string
 }): Promise<{ success: boolean }> {
-  const res = await fetch(`${GRAPH_BASE}/${encodeURIComponent(params.wabaId)}/whatsapp_business_encryption`, {
+  const form = new URLSearchParams()
+  form.set('business_public_key', params.publicKey)
+
+  const res = await fetch(`${GRAPH_BASE}/${encodeURIComponent(params.phoneNumberId)}/whatsapp_business_encryption`, {
     method: 'POST',
     headers: {
       Authorization: `Bearer ${params.accessToken}`,
-      'Content-Type': 'application/json',
+      'Content-Type': 'application/x-www-form-urlencoded',
     },
-    body: JSON.stringify({
-      business_public_key: params.publicKey,
-    }),
+    body: form.toString(),
   })
 
   const data = await readJsonSafe(res)
@@ -266,9 +267,9 @@ export async function metaSetEncryptionPublicKey(params: {
  */
 export async function metaGetEncryptionPublicKey(params: {
   accessToken: string
-  wabaId: string
+  phoneNumberId: string
 }): Promise<{ publicKey: string | null }> {
-  const url = `${GRAPH_BASE}/${encodeURIComponent(params.wabaId)}/whatsapp_business_encryption`
+  const url = `${GRAPH_BASE}/${encodeURIComponent(params.phoneNumberId)}/whatsapp_business_encryption`
   const res = await fetch(url, {
     method: 'GET',
     headers: {

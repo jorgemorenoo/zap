@@ -280,6 +280,15 @@ export async function handleFlowAction(
 
   console.log('[flow-handler] Processing:', { action, screen, data })
 
+  // Notificacao de erro do client: apenas reconhecer o payload
+  if (data && typeof data === 'object' && 'error' in data) {
+    return {
+      data: {
+        acknowledged: true,
+      },
+    }
+  }
+
   switch (action) {
     case 'INIT':
       return handleInit()

@@ -112,6 +112,17 @@ export async function POST(req: NextRequest, ctx: { params: Promise<{ id: string
         { status: 400 }
       )
     }
+    if (!credentials.phoneNumberId) {
+      return NextResponse.json(
+        {
+          error: 'WhatsApp não configurado. Defina o Phone Number ID nas Configurações.',
+        },
+        { status: 400 }
+      )
+    }
+    // #region agent log
+    fetch('http://127.0.0.1:7243/ingest/1294d6ce-76f2-430d-96ab-3ae4d7527327',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({sessionId:'debug-session',runId:'pre-fix',hypothesisId:'H10',location:'app/api/flows/[id]/meta/publish/route.ts:96',message:'whatsapp credentials resolved',data:{hasAccessToken:Boolean(credentials?.accessToken),wabaId:credentials?.businessAccountId ?? null,hasPhoneNumberId:Boolean(credentials?.phoneNumberId)},timestamp:Date.now()})}).catch(()=>{});
+    // #endregion agent log
 
     // Busca o flow local
     const { data, error } = await supabase.from('flows').select('*').eq('id', id).limit(1)
@@ -233,7 +244,7 @@ export async function POST(req: NextRequest, ctx: { params: Promise<{ id: string
 
         const existingKey = await metaGetEncryptionPublicKey({
           accessToken: credentials.accessToken,
-          wabaId: credentials.businessAccountId,
+          phoneNumberId: credentials.phoneNumberId,
         })
         const needsRegistration = !existingKey.publicKey || existingKey.publicKey.trim() !== publicKey.trim()
         // #region agent log
@@ -242,7 +253,7 @@ export async function POST(req: NextRequest, ctx: { params: Promise<{ id: string
         if (needsRegistration) {
           await metaSetEncryptionPublicKey({
             accessToken: credentials.accessToken,
-            wabaId: credentials.businessAccountId,
+            phoneNumberId: credentials.phoneNumberId,
             publicKey,
           })
           // #region agent log
