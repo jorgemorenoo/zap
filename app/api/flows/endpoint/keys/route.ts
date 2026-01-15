@@ -14,13 +14,30 @@ import {
   isValidPrivateKey,
 } from '@/lib/whatsapp/flow-endpoint-crypto'
 
+export const runtime = 'nodejs'
+export const dynamic = 'force-dynamic'
+export const revalidate = 0
+
 const PRIVATE_KEY_SETTING = 'whatsapp_flow_private_key'
 const PUBLIC_KEY_SETTING = 'whatsapp_flow_public_key'
+const ENDPOINT_URL_SETTING = 'whatsapp_flow_endpoint_url'
+
+function resolveEndpointUrlFromRequest(request: Request): string | null {
+  const proto = request.headers.get('x-forwarded-proto') || 'https'
+  const host = request.headers.get('x-forwarded-host') || request.headers.get('host')
+  if (!host) return null
+  return `${proto}://${host}/api/flows/endpoint`
+}
+
+function isLocalhostUrl(value: string | null): boolean {
+  if (!value) return false
+  return value.includes('localhost') || value.includes('127.0.0.1')
+}
 
 /**
  * GET - Retorna status das chaves e URL do endpoint
  */
-export async function GET() {
+export async function GET(request: Request) {
   try {
     if (!isSupabaseConfigured()) {
       return NextResponse.json({ error: 'Supabase nao configurado' }, { status: 400 })
@@ -30,20 +47,55 @@ export async function GET() {
       settingsDb.get(PRIVATE_KEY_SETTING),
       settingsDb.get(PUBLIC_KEY_SETTING),
     ])
+    const storedEndpointUrl = await settingsDb.get(ENDPOINT_URL_SETTING)
 
     const hasPrivateKey = !!privateKey && isValidPrivateKey(privateKey)
     const hasPublicKey = !!publicKey
+    const envEndpointUrl = process.env.VERCEL_PROJECT_PRODUCTION_URL
+      ? `https://${process.env.VERCEL_PROJECT_PRODUCTION_URL}/api/flows/endpoint`
+      : process.env.VERCEL_URL
+        ? `https://${process.env.VERCEL_URL}/api/flows/endpoint`
+        : process.env.NEXT_PUBLIC_APP_URL
+          ? `${process.env.NEXT_PUBLIC_APP_URL}/api/flows/endpoint`
+          : null
+    const headerEndpointUrl = resolveEndpointUrlFromRequest(request)
+    const safeStoredEndpointUrl =
+      storedEndpointUrl && !isLocalhostUrl(headerEndpointUrl) && isLocalhostUrl(storedEndpointUrl)
+        ? null
+        : storedEndpointUrl
+    const endpointUrl = envEndpointUrl || safeStoredEndpointUrl || headerEndpointUrl || null
+    const endpointSource = envEndpointUrl
+      ? 'env'
+      : safeStoredEndpointUrl
+        ? 'stored'
+        : headerEndpointUrl
+          ? 'header'
+          : 'none'
+    // #region agent log
+    fetch('http://127.0.0.1:7243/ingest/1294d6ce-76f2-430d-96ab-3ae4d7527327',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({sessionId:'debug-session',runId:'pre-fix',hypothesisId:'H1',location:'app/api/flows/endpoint/keys/route.ts:56',message:'endpoint keys status resolved',data:{hasPrivateKey,hasPublicKey,hasEnvEndpointUrl:Boolean(envEndpointUrl),hasStoredEndpointUrl:Boolean(storedEndpointUrl),hasHeaderEndpointUrl:Boolean(headerEndpointUrl),hasEndpointUrl:Boolean(endpointUrl),ignoredStoredDueToLocalhost:storedEndpointUrl ? Boolean(safeStoredEndpointUrl === null && !isLocalhostUrl(headerEndpointUrl)) : false},timestamp:Date.now()})}).catch(()=>{});
+    // #endregion agent log
 
-    return NextResponse.json({
+    const responseBody = {
       configured: hasPrivateKey && hasPublicKey,
       publicKey: hasPublicKey ? publicKey : null,
-      endpointUrl: process.env.VERCEL_PROJECT_PRODUCTION_URL
-        ? `https://${process.env.VERCEL_PROJECT_PRODUCTION_URL}/api/flows/endpoint`
-        : process.env.VERCEL_URL
-          ? `https://${process.env.VERCEL_URL}/api/flows/endpoint`
-          : process.env.NEXT_PUBLIC_APP_URL
-            ? `${process.env.NEXT_PUBLIC_APP_URL}/api/flows/endpoint`
-            : null,
+      endpointUrl,
+      debug: {
+        endpointSource,
+        envEndpointUrl,
+        storedEndpointUrl,
+        headerEndpointUrl,
+        resolvedEndpointUrl: endpointUrl,
+        headerHost: request.headers.get('x-forwarded-host') || request.headers.get('host') || null,
+        headerProto: request.headers.get('x-forwarded-proto') || null,
+      },
+    }
+    // #region agent log
+    fetch('http://127.0.0.1:7243/ingest/1294d6ce-76f2-430d-96ab-3ae4d7527327',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({sessionId:'debug-session',runId:'pre-fix',hypothesisId:'H4',location:'app/api/flows/endpoint/keys/route.ts:65',message:'endpoint keys response',data:{configured:responseBody.configured,hasPublicKey:Boolean(responseBody.publicKey),hasEndpointUrl:Boolean(responseBody.endpointUrl)},timestamp:Date.now()})}).catch(()=>{});
+    // #endregion agent log
+    return NextResponse.json(responseBody, {
+      headers: {
+        'Cache-Control': 'no-store',
+      },
     })
   } catch (error) {
     console.error('[flow-endpoint-keys] GET error:', error)
@@ -99,6 +151,14 @@ export async function POST(request: Request) {
       settingsDb.set(PRIVATE_KEY_SETTING, privateKey),
       settingsDb.set(PUBLIC_KEY_SETTING, publicKey),
     ])
+    const endpointUrl = resolveEndpointUrlFromRequest(request)
+    const shouldStoreEndpointUrl = endpointUrl && !isLocalhostUrl(endpointUrl)
+    if (shouldStoreEndpointUrl) {
+      await settingsDb.set(ENDPOINT_URL_SETTING, endpointUrl)
+    }
+    // #region agent log
+    fetch('http://127.0.0.1:7243/ingest/1294d6ce-76f2-430d-96ab-3ae4d7527327',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({sessionId:'debug-session',runId:'pre-fix',hypothesisId:'H2',location:'app/api/flows/endpoint/keys/route.ts:123',message:'endpoint keys saved',data:{storedEndpointUrl:Boolean(endpointUrl),storedEndpointUrlPersisted:Boolean(shouldStoreEndpointUrl),skippedLocalhost:Boolean(endpointUrl && isLocalhostUrl(endpointUrl))},timestamp:Date.now()})}).catch(()=>{});
+    // #endregion agent log
 
     return NextResponse.json({
       success: true,

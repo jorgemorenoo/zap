@@ -1,5 +1,39 @@
 # Changelog (docs)
 
+## 15/01/2026 - MiniApps dinâmicos (agendamento)
+
+- **✅ Publicação preserva Flow JSON dinâmico**
+  - `app/api/flows/[id]/meta/publish/route.ts` agora mantém o `flow_json` salvo quando `data_api_version=3.0`
+  - Evita regenerar a partir do `spec.form` e perder `data_exchange` no agendamento com Google Calendar
+
+- **🧭 Builder não sobrescreve Flow dinâmico**
+  - `app/(dashboard)/flows/builder/[id]/page.tsx` mantém `flow_json` dinâmico ao salvar/publicar
+  - Garante que o template de agendamento continue com `data_exchange` após ajustes no formulário
+
+- **🧩 Validação local aceita componente Form**
+  - `lib/meta-flow-json-validator.ts` agora permite `Form` e valida filhos internos
+  - Desbloqueia publish de MiniApps dinâmicos com `data_exchange`
+
+- **🔗 Endpoint URL resolvido para MiniApps dinâmicos**
+  - `app/api/flows/endpoint/keys/route.ts` passa a usar origin dos headers e salvar URL no settings
+  - `app/api/flows/[id]/meta/publish/route.ts` utiliza URL salva quando envs não estão setadas
+
+- **🧰 Endpoint keys com runtime Node e sem cache**
+  - `app/api/flows/endpoint/keys/route.ts` força `nodejs` + `force-dynamic`
+  - Evita resposta stale e garante headers disponíveis para montar URL
+
+- **🛰️ Endpoint URL sem cache no painel**
+  - `components/features/settings/FlowEndpointPanel.tsx` força `no-store`
+  - `app/api/flows/endpoint/keys/route.ts` retorna `Cache-Control: no-store`
+
+- **🧯 Evita sobrescrever URL com localhost**
+  - `app/api/flows/endpoint/keys/route.ts` não grava URL local no settings
+  - Prioriza URL salva/ambiente quando o request não é localhost
+
+- **🧪 Debug de origem do endpoint**
+  - `app/api/flows/endpoint/keys/route.ts` expõe origem da URL para diagnóstico
+  - `components/features/settings/FlowEndpointPanel.tsx` loga `header/env/stored`
+
 ## 25/12/2025 - Debug (Run/Trace para campanhas)
 
 - **🔎 Timeline estruturada por `trace_id` (sem caçar logs)**

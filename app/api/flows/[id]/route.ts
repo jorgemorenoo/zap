@@ -52,6 +52,10 @@ export async function PATCH(req: NextRequest, ctx: { params: Promise<{ id: strin
     const json = await req.json()
     const patch = PatchFlowSchema.parse(json)
     const now = new Date().toISOString()
+    const flowJsonObj = patch.flowJson && typeof patch.flowJson === 'object' ? (patch.flowJson as Record<string, unknown>) : null
+    // #region agent log
+    fetch('http://127.0.0.1:7243/ingest/1294d6ce-76f2-430d-96ab-3ae4d7527327',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({sessionId:'debug-session',runId:'pre-fix',hypothesisId:'H3',location:'app/api/flows/[id]/route.ts:55',message:'flow PATCH received',data:{flowId:id,hasFlowJson:Boolean(patch.flowJson),flowJsonVersion:flowJsonObj?.version ?? null,flowJsonDataApiVersion:flowJsonObj?.data_api_version ?? null,hasSpec:Boolean(patch.spec),hasTemplateKey:Boolean(patch.templateKey)},timestamp:Date.now()})}).catch(()=>{});
+    // #endregion agent log
 
     const update: Record<string, unknown> = { updated_at: now }
     if (patch.name !== undefined) update.name = patch.name

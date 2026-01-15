@@ -29,6 +29,8 @@ function isDynamicFlow(flowJson: unknown): boolean {
   return json.data_api_version === '3.0'
 }
 
+const ENDPOINT_URL_SETTING = 'whatsapp_flow_endpoint_url'
+
 /**
  * Retorna a URL do endpoint se configurado
  */
@@ -37,16 +39,19 @@ async function getFlowEndpointUrl(): Promise<string | null> {
   if (!privateKey) return null
 
   // Monta a URL do endpoint
-  if (process.env.VERCEL_PROJECT_PRODUCTION_URL) {
-    return `https://${process.env.VERCEL_PROJECT_PRODUCTION_URL}/api/flows/endpoint`
-  }
-  if (process.env.VERCEL_URL) {
-    return `https://${process.env.VERCEL_URL}/api/flows/endpoint`
-  }
-  if (process.env.NEXT_PUBLIC_APP_URL) {
-    return `${process.env.NEXT_PUBLIC_APP_URL}/api/flows/endpoint`
-  }
-  return null
+  const envEndpointUrl = process.env.VERCEL_PROJECT_PRODUCTION_URL
+    ? `https://${process.env.VERCEL_PROJECT_PRODUCTION_URL}/api/flows/endpoint`
+    : process.env.VERCEL_URL
+      ? `https://${process.env.VERCEL_URL}/api/flows/endpoint`
+      : process.env.NEXT_PUBLIC_APP_URL
+        ? `${process.env.NEXT_PUBLIC_APP_URL}/api/flows/endpoint`
+        : null
+  const storedEndpointUrl = await settingsDb.get(ENDPOINT_URL_SETTING)
+  const resolved = envEndpointUrl || storedEndpointUrl || null
+  // #region agent log
+  fetch('http://127.0.0.1:7243/ingest/1294d6ce-76f2-430d-96ab-3ae4d7527327',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({sessionId:'debug-session',runId:'pre-fix',hypothesisId:'H6',location:'app/api/flows/[id]/meta/publish/route.ts:55',message:'flow endpoint url resolved',data:{hasEnvEndpointUrl:Boolean(envEndpointUrl),hasStoredEndpointUrl:Boolean(storedEndpointUrl),hasResolvedEndpointUrl:Boolean(resolved)},timestamp:Date.now()})}).catch(()=>{});
+  // #endregion agent log
+  return resolved
 }
 
 const PublishSchema = z
@@ -59,7 +64,18 @@ const PublishSchema = z
   .strict()
 
 function extractFlowJson(row: any): unknown {
-  // Prioridade: SEMPRE regenerar do spec.form se existir.
+  const savedFlowJson = row?.flow_json
+  const savedDataApiVersion =
+    savedFlowJson && typeof savedFlowJson === 'object'
+      ? (savedFlowJson as Record<string, unknown>).data_api_version
+      : null
+
+  // Se o flow_json salvo for dinâmico, preserve-o para não perder data_exchange.
+  if (savedDataApiVersion === '3.0') {
+    return savedFlowJson
+  }
+
+  // Prioridade: regenerar do spec.form se existir (flows estáticos).
   // Isso garante que qualquer mudança no generateFlowJsonFromFormSpec
   // (ex: inclusão do payload no on-click-action) seja aplicada automaticamente.
   const form = row?.spec?.form
@@ -69,7 +85,7 @@ function extractFlowJson(row: any): unknown {
   }
 
   // Fallback: flow_json persistido (para flows legados sem spec.form)
-  if (row?.flow_json) return row.flow_json
+  if (savedFlowJson) return savedFlowJson
 
   // Último fallback: gerar vazio
   const emptyNormalized = normalizeFlowFormSpec({}, row?.name || 'Flow')
@@ -100,6 +116,9 @@ export async function POST(req: NextRequest, ctx: { params: Promise<{ id: string
     if (!row) return NextResponse.json({ error: 'Flow não encontrado' }, { status: 404 })
 
     let flowJson = extractFlowJson(row)
+    // #region agent log
+    fetch('http://127.0.0.1:7243/ingest/1294d6ce-76f2-430d-96ab-3ae4d7527327',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({sessionId:'debug-session',runId:'pre-fix',hypothesisId:'H1',location:'app/api/flows/[id]/meta/publish/route.ts:104',message:'extractFlowJson result',data:{flowId:id,hasSpecForm:Boolean(row?.spec?.form),hasFlowJson:Boolean(row?.flow_json),flowJsonVersion:(flowJson as any)?.version ?? null,flowJsonDataApiVersion:(flowJson as any)?.data_api_version ?? null},timestamp:Date.now()})}).catch(()=>{});
+    // #endregion agent log
 
     // Validação “local” (rápida) para evitar publicar algo obviamente inválido.
     // A validação oficial é da Meta e vem em validation_errors.
@@ -117,6 +136,16 @@ export async function POST(req: NextRequest, ctx: { params: Promise<{ id: string
     // Validação do schema do Flow JSON (mais próximo do que a Meta espera) antes de chamar a Graph API.
     // Isso evita o "(100) Invalid parameter" sem contexto.
     let localValidation = validateMetaFlowJson(flowJson)
+    // #region agent log
+    fetch('http://127.0.0.1:7243/ingest/1294d6ce-76f2-430d-96ab-3ae4d7527327',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({sessionId:'debug-session',runId:'pre-fix',hypothesisId:'H2',location:'app/api/flows/[id]/meta/publish/route.ts:124',message:'local validation result',data:{flowId:id,isValid:localValidation.isValid,issuesCount:Array.isArray((localValidation as any)?.issues)?(localValidation as any).issues.length:null,usesDataApiVersion:((flowJson as any)?.data_api_version === '3.0')},timestamp:Date.now()})}).catch(()=>{});
+    // #endregion agent log
+    if (!localValidation.isValid) {
+      const errors = Array.isArray(localValidation.errors) ? localValidation.errors.slice(0, 6) : []
+      const warnings = Array.isArray(localValidation.warnings) ? localValidation.warnings.slice(0, 6) : []
+      // #region agent log
+      fetch('http://127.0.0.1:7243/ingest/1294d6ce-76f2-430d-96ab-3ae4d7527327',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({sessionId:'debug-session',runId:'pre-fix',hypothesisId:'H5',location:'app/api/flows/[id]/meta/publish/route.ts:131',message:'local validation details',data:{flowId:id,errorsCount:Array.isArray(localValidation.errors)?localValidation.errors.length:null,warningsCount:Array.isArray(localValidation.warnings)?localValidation.warnings.length:null,errors, warnings},timestamp:Date.now()})}).catch(()=>{});
+      // #endregion agent log
+    }
 
     // Se o flow_json persistido estiver legado/inválido, tentamos regenerar do spec.form automaticamente.
     if (!localValidation.isValid && row?.spec?.form) {
@@ -165,7 +194,13 @@ export async function POST(req: NextRequest, ctx: { params: Promise<{ id: string
 
       if (dynamic) {
         const url = await getFlowEndpointUrl()
+        // #region agent log
+        fetch('http://127.0.0.1:7243/ingest/1294d6ce-76f2-430d-96ab-3ae4d7527327',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({sessionId:'debug-session',runId:'pre-fix',hypothesisId:'H3',location:'app/api/flows/[id]/meta/publish/route.ts:172',message:'dynamic flow endpoint resolution',data:{flowId:id,hasEndpointUrl:Boolean(url)},timestamp:Date.now()})}).catch(()=>{});
+        // #endregion agent log
         if (!url) {
+          // #region agent log
+          fetch('http://127.0.0.1:7243/ingest/1294d6ce-76f2-430d-96ab-3ae4d7527327',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({sessionId:'debug-session',runId:'pre-fix',hypothesisId:'H3',location:'app/api/flows/[id]/meta/publish/route.ts:176',message:'dynamic flow missing endpoint',data:{flowId:id},timestamp:Date.now()})}).catch(()=>{});
+          // #endregion agent log
           return NextResponse.json(
             {
               error: 'Flow dinamico requer endpoint configurado. Va em Configuracoes > MiniApp Dinamico e gere as chaves.',

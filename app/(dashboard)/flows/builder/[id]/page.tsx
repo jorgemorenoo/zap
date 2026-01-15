@@ -38,6 +38,7 @@ export default function FlowBuilderEditorPage({
   const [formIssues, setFormIssues] = React.useState<string[]>([])
   const [formDirty, setFormDirty] = React.useState(false)
   const latestFormSpecRef = React.useRef<any>(null)
+  const dynamicFlowJsonRef = React.useRef<Record<string, unknown> | null>(null)
   const formActionsRef = React.useRef<{
     openAI: () => void
     openTemplate: () => void
@@ -59,7 +60,8 @@ export default function FlowBuilderEditorPage({
   const handleFormPreviewChange = React.useCallback(
     ({ form, generatedJson, issues, dirty }: { form: any; generatedJson: unknown; issues: string[]; dirty: boolean }) => {
       latestFormSpecRef.current = form
-      setFormPreviewJson(generatedJson)
+      const dynamicJson = dynamicFlowJsonRef.current || null
+      setFormPreviewJson(dynamicJson ?? generatedJson)
       setFormScreenId(String(form?.screenId || ''))
       setFormIssues(Array.isArray(issues) ? issues : [])
       setFormDirty(!!dirty)
@@ -177,6 +179,9 @@ export default function FlowBuilderEditorPage({
       // Para templates dinâmicos, usa o flowJson original
       flowJson: tpl.isDynamic ? tpl.flowJson : generateFlowJsonFromFormSpec(form),
     })
+    if (tpl.isDynamic) {
+      dynamicFlowJsonRef.current = tpl.flowJson
+    }
     setStep(2)
     toast.success(tpl.isDynamic
       ? 'Template dinâmico aplicado! O agendamento em tempo real será configurado ao publicar.'
@@ -220,6 +225,16 @@ export default function FlowBuilderEditorPage({
     setName((prev) => prev || flow.name || '')
     setMetaFlowId((prev) => prev || flow.meta_flow_id || '')
   }, [flow?.id])
+
+  React.useEffect(() => {
+    const flowJson = (flow as any)?.flow_json
+    if (!flowJson || typeof flowJson !== 'object') return
+    const dataApiVersion = (flowJson as any).data_api_version
+    if (dataApiVersion === '3.0') {
+      dynamicFlowJsonRef.current = flowJson as Record<string, unknown>
+      setFormPreviewJson(flowJson)
+    }
+  }, [flow])
 
   const shouldShowLoading = controller.isLoading
   const panelClass = 'rounded-2xl border border-white/10 bg-zinc-900/60 shadow-[0_12px_30px_rgba(0,0,0,0.35)]'
@@ -457,9 +472,12 @@ export default function FlowBuilderEditorPage({
                   onActionComplete={() => setStep(2)}
                   onPreviewChange={handleFormPreviewChange as any}
                   onSave={(patch) => {
+                    const dynamicFlowJson = dynamicFlowJsonRef.current
                     controller.save({
                       ...(patch.spec !== undefined ? { spec: patch.spec } : {}),
-                      ...(patch.flowJson !== undefined ? { flowJson: patch.flowJson } : {}),
+                      ...(patch.flowJson !== undefined
+                        ? { flowJson: dynamicFlowJson ?? patch.flowJson }
+                        : {}),
                     })
                   }}
                 />
@@ -532,7 +550,11 @@ export default function FlowBuilderEditorPage({
                           ? { ...(controller.spec as any), form: latestFormSpecRef.current }
                           : controller.spec
 
-                        const flowJsonToSave = formPreviewJson || (flow as any)?.flow_json
+                        const flowJsonToSave =
+                          dynamicFlowJsonRef.current || formPreviewJson || (flow as any)?.flow_json
+                        // #region agent log
+                        fetch('http://127.0.0.1:7243/ingest/1294d6ce-76f2-430d-96ab-3ae4d7527327',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({sessionId:'debug-session',runId:'post-fix',hypothesisId:'H4',location:'app/(dashboard)/flows/builder/[id]/page.tsx:543',message:'publish flow json selection',data:{flowId:id,hasDynamicOverride:Boolean(dynamicFlowJsonRef.current),flowJsonVersion:(flowJsonToSave as any)?.version ?? null,flowJsonDataApiVersion:(flowJsonToSave as any)?.data_api_version ?? null},timestamp:Date.now()})}).catch(()=>{});
+                        // #endregion agent log
 
                         await controller.saveAsync({
                           name,

@@ -42,6 +42,7 @@ const ALLOWED_COMPONENT_TYPES = new Set<string>([
   'OptIn',
 
   // Other basics
+  'Form',
   'Footer',
   'EmbeddedLink',
   'Image',
@@ -123,6 +124,19 @@ function validateComponent(component: unknown, path: string, out: FlowJsonValida
     if (!(typeof text === 'string' || isStringArray(text))) {
       pushIssue(out.errors, `${path}.text`, 'Obrigatório (string ou array de strings).')
     }
+  }
+
+  if (type === 'Form') {
+    const children = (component as any).children
+    if (!Array.isArray(children)) {
+      pushIssue(out.errors, `${path}.children`, 'Obrigatório (array).')
+      return { footerCount: ctx.footerCount }
+    }
+    children.forEach((c: unknown, idx: number) => {
+      const cp = `${path}.children[${idx}]`
+      ;({ footerCount: ctx.footerCount } = validateComponent(c, cp, out, ctx))
+    })
+    return { footerCount: ctx.footerCount }
   }
 
   if (type === 'Footer') {

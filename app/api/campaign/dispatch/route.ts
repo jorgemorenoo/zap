@@ -198,6 +198,9 @@ export async function POST(request: NextRequest) {
 
   const body = bodyText ? JSON.parse(bodyText) : {}
   const { campaignId, templateName, whatsappCredentials, templateVariables, flowId } = body
+  // #region agent log
+  fetch('http://127.0.0.1:7243/ingest/1294d6ce-76f2-430d-96ab-3ae4d7527327',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({sessionId:'debug-session',runId:'pre-fix',hypothesisId:'H1',location:'app/api/campaign/dispatch/route.ts:205',message:'dispatch request received',data:{hasCampaignId:Boolean(campaignId),templateName:typeof templateName === 'string' ? templateName : null,hasFlowId:Boolean(flowId),trigger:body?.trigger ?? null,hasContacts:Array.isArray(body?.contacts),hasTemplateVariables:Boolean(templateVariables)},timestamp:Date.now()})}).catch(()=>{});
+  // #endregion agent log
   const trigger: 'schedule' | 'manual' | string | undefined = body?.trigger
   const scheduledAtFromJob: string | undefined = body?.scheduledAt
   let { contacts } = body
@@ -290,6 +293,15 @@ export async function POST(request: NextRequest) {
 
   // A partir daqui, `template` deve ser sempre definido.
   let template = initialTemplate
+  const templateComponents = (template as any)?.components || (template as any)?.content || []
+  const hasFlowButton = Array.isArray(templateComponents)
+    ? templateComponents.some((c: any) => String(c?.type || '').toUpperCase() === 'BUTTONS' &&
+        Array.isArray(c?.buttons) &&
+        c.buttons.some((b: any) => String(b?.type || '').toUpperCase() === 'FLOW'))
+    : false
+  // #region agent log
+  fetch('http://127.0.0.1:7243/ingest/1294d6ce-76f2-430d-96ab-3ae4d7527327',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({sessionId:'debug-session',runId:'pre-fix',hypothesisId:'H2',location:'app/api/campaign/dispatch/route.ts:301',message:'template loaded',data:{templateName:template?.name ?? null,hasFlowButton,componentsCount:Array.isArray(templateComponents)?templateComponents.length:null},timestamp:Date.now()})}).catch(()=>{});
+  // #endregion agent log
 
   // Se o template tem HEADER de mídia, o envio precisa do "link" (URL) da mídia do template.
   // Alguns registros locais (ex.: recém-criados via builder) podem ter apenas handle "4::...".
@@ -845,6 +857,9 @@ export async function POST(request: NextRequest) {
   // =========================================================================
 
   if (flowId) {
+    // #region agent log
+    fetch('http://127.0.0.1:7243/ingest/1294d6ce-76f2-430d-96ab-3ae4d7527327',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({sessionId:'debug-session',runId:'pre-fix',hypothesisId:'H3',location:'app/api/campaign/dispatch/route.ts:845',message:'flowId provided but flow engine disabled',data:{flowIdPresent:Boolean(flowId)},timestamp:Date.now()})}).catch(()=>{});
+    // #endregion agent log
     console.log('[Dispatch] Flow Engine is disabled in this template. Using legacy workflow.')
     // Fallthrough to legacy workflow
   }

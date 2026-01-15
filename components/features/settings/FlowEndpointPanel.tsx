@@ -18,8 +18,11 @@ export function FlowEndpointPanel() {
 
   const fetchStatus = async () => {
     try {
-      const res = await fetch('/api/flows/endpoint/keys');
+      const res = await fetch('/api/flows/endpoint/keys', { cache: 'no-store' });
       const data = await res.json();
+      // #region agent log
+      fetch('http://127.0.0.1:7243/ingest/1294d6ce-76f2-430d-96ab-3ae4d7527327',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({sessionId:'debug-session',runId:'pre-fix',hypothesisId:'H3',location:'components/features/settings/FlowEndpointPanel.tsx:24',message:'endpoint keys fetched',data:{ok:res.ok,status:res.status,configured:!!data?.configured,hasEndpointUrl:Boolean(data?.endpointUrl),endpointUrl:typeof data?.endpointUrl === 'string' ? data.endpointUrl : null,hasPublicKey:Boolean(data?.publicKey),hasError:Boolean(data?.error),endpointSource:data?.debug?.endpointSource ?? null,headerHost:data?.debug?.headerHost ?? null,headerProto:data?.debug?.headerProto ?? null,envEndpointUrl:data?.debug?.envEndpointUrl ?? null,storedEndpointUrl:data?.debug?.storedEndpointUrl ?? null,resolvedEndpointUrl:data?.debug?.resolvedEndpointUrl ?? null},timestamp:Date.now()})}).catch(()=>{});
+      // #endregion agent log
       setStatus(data);
     } catch {
       toast.error('Erro ao verificar status');
@@ -128,6 +131,12 @@ export function FlowEndpointPanel() {
             <code className="text-sm text-white font-mono break-all">
               {status.endpointUrl || 'URL não disponível'}
             </code>
+            {!status.endpointUrl ? (
+              <p className="mt-2 text-[11px] text-gray-500">
+                Dica: defina `NEXT_PUBLIC_APP_URL` no ambiente de produção ou gere as chaves no
+                próprio ambiente para registrar a URL correta.
+              </p>
+            ) : null}
           </div>
 
           {/* Regenerate */}
