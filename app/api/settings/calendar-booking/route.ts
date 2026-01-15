@@ -28,6 +28,9 @@ export interface CalendarBookingConfig {
   minAdvanceHours?: number
   maxAdvanceDays?: number
   allowSimultaneous?: boolean
+  externalWebhookUrl?: string
+  confirmationTitle?: string
+  confirmationFooter?: string
 }
 
 const DEFAULT_CONFIG: CalendarBookingConfig = {
@@ -73,8 +76,32 @@ function normalizeSlots(slots: unknown): TimeSlot[] | undefined {
   return normalized.length > 0 ? normalized : undefined
 }
 
+function normalizeWebhookUrl(value: unknown): string | undefined {
+  if (typeof value !== 'string') return undefined
+  const trimmed = value.trim()
+  if (!trimmed) return undefined
+  try {
+    const url = new URL(trimmed)
+    if (url.protocol !== 'http:' && url.protocol !== 'https:') {
+      return undefined
+    }
+    return trimmed
+  } catch {
+    return undefined
+  }
+}
+
+function normalizeConfirmationText(value: unknown): string | undefined {
+  if (typeof value !== 'string') return undefined
+  const trimmed = value.trim()
+  return trimmed ? trimmed : undefined
+}
+
 function normalizeConfig(input?: Partial<CalendarBookingConfig>): CalendarBookingConfig {
   const workingHoursInput = Array.isArray(input?.workingHours) ? input?.workingHours : []
+  const externalWebhookUrl = normalizeWebhookUrl(input?.externalWebhookUrl)
+  const confirmationTitle = normalizeConfirmationText(input?.confirmationTitle)
+  const confirmationFooter = normalizeConfirmationText(input?.confirmationFooter)
   const byDay = new Map<Weekday, Partial<WorkingHoursDay>>()
   for (const entry of workingHoursInput) {
     if (!entry || typeof entry !== 'object') continue
@@ -104,6 +131,9 @@ function normalizeConfig(input?: Partial<CalendarBookingConfig>): CalendarBookin
     minAdvanceHours: clampInt(input?.minAdvanceHours, 0, 168, DEFAULT_CONFIG.minAdvanceHours!),
     maxAdvanceDays: clampInt(input?.maxAdvanceDays, 1, 90, DEFAULT_CONFIG.maxAdvanceDays!),
     allowSimultaneous: boolFromUnknown(input?.allowSimultaneous, DEFAULT_CONFIG.allowSimultaneous!),
+    ...(externalWebhookUrl ? { externalWebhookUrl } : {}),
+    ...(confirmationTitle ? { confirmationTitle } : {}),
+    ...(confirmationFooter ? { confirmationFooter } : {}),
   }
 }
 

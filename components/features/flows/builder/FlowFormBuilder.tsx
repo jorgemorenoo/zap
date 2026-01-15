@@ -4,6 +4,7 @@ import React, { useEffect, useMemo, useRef, useState } from 'react'
 import { nanoid } from 'nanoid'
 
 import { Input } from '@/components/ui/input'
+import { Switch } from '@/components/ui/switch'
 
 import {
   FlowFormFieldType,
@@ -241,6 +242,35 @@ export function FlowFormBuilder(props: FlowFormBuilderProps) {
           Botão (última ação)
         </label>
         <Input value={form.submitLabel} onChange={(e) => update({ submitLabel: e.target.value })} />
+      </div>
+
+      <div className="flex items-center justify-between rounded-xl border border-white/10 bg-zinc-950/40 px-3 py-2">
+        <div>
+          <div className="text-xs font-medium text-gray-300">Enviar confirmação ao usuário</div>
+          <div className="text-[11px] text-gray-500">Mostra o resumo das respostas após finalizar</div>
+        </div>
+        <Switch
+          checked={form.sendConfirmation !== false}
+          onCheckedChange={(checked) => update({ sendConfirmation: checked })}
+        />
+      </div>
+
+      <div className="space-y-2">
+        <label className="block text-xs uppercase tracking-widest text-gray-500">
+          Texto da confirmação (opcional)
+        </label>
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+          <Input
+            value={form.confirmationTitle || ''}
+            onChange={(e) => update({ confirmationTitle: e.target.value })}
+            placeholder="Resposta registrada ✅"
+          />
+          <Input
+            value={form.confirmationFooter || ''}
+            onChange={(e) => update({ confirmationFooter: e.target.value })}
+            placeholder="Qualquer ajuste, responda esta mensagem."
+          />
+        </div>
       </div>
 
       {/* Dialogs */}

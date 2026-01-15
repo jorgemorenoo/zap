@@ -503,7 +503,7 @@ describe('campaignService', () => {
 
       const result = await campaignService.duplicate('campaign-123')
 
-      expect(mockFetch).toHaveBeenCalledWith('/api/campaigns/campaign-123/duplicate', { method: 'POST' })
+      expect(mockFetch).toHaveBeenCalledWith('/api/campaigns/campaign-123/clone', { method: 'POST' })
       expect(result).toEqual(duplicatedCampaign)
     })
 

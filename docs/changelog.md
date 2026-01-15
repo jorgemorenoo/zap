@@ -96,9 +96,39 @@
   - Flow JSON atualizado para `7.3` (recomendado pela Meta) e campos `min/max/include-days`
   - Datas não trabalhadas agora aparecem desabilitadas via `unavailable-dates`
 
+- **🗓️ Data com dia da semana no Flow**
+  - `lib/whatsapp/flow-endpoint-handlers.ts` exibe `DD/MM/YYYY (Quinta)` no título da seleção de horários
+  - Mensagem de erro também destaca a data como `Quinta - 22/01`
+
+- **🌐 Webhook externo para agendamentos**
+  - `app/api/settings/calendar-booking/route.ts` passa a salvar `externalWebhookUrl` no config
+  - `components/features/settings/calendar/BookingConfigSection.tsx` adiciona campo para URL externa
+  - `app/api/webhook/route.ts` envia payload JSON para o webhook no `nfm_reply`
+
+- **✅ Confirmação detalhada no WhatsApp**
+  - `app/api/webhook/route.ts` inclui nome, telefone e observações na mensagem de confirmação
+  - Data exibida com dia da semana quando disponível
+  - `lib/whatsapp/flow-endpoint-handlers.ts` inclui dados do formulário no close response para o webhook
+
+- **🧾 Confirmação configurável no Form Builder**
+  - `lib/flow-form.ts` adiciona `sendConfirmation` e envia `send_confirmation` no payload quando desativado
+  - `components/features/flows/builder/FlowFormBuilder.tsx` inclui toggle "Enviar confirmação ao usuário"
+  - `app/api/webhook/route.ts` respeita `send_confirmation` e gera resumo genérico quando aplicável
+  - `lib/flow-form.ts` permite definir `confirmation_title` e `confirmation_footer` por Flow
+
+- **✍️ Mensagem de confirmação personalizável**
+  - `components/features/settings/calendar/BookingConfigSection.tsx` permite editar título e rodapé
+  - `app/api/webhook/route.ts` usa os textos configurados para a confirmação
+
 - **✅ Confirmação automática pós‑Flow**
   - `app/api/webhook/route.ts` envia mensagem de confirmação quando recebe `nfm_reply` do Flow
   - Mensagem inclui serviço, data e horário quando disponíveis
+
+## 15/01/2026 - Campanhas
+
+- **🧩 Clone de campanha usa rota correta**
+  - `services/campaignService.ts` agora chama `/api/campaigns/:id/clone` (em vez de `/duplicate`)
+  - `services/campaignService.test.ts` atualizado para refletir a rota
 
 ## 25/12/2025 - Debug (Run/Trace para campanhas)
 

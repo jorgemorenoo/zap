@@ -245,6 +245,9 @@ export interface CalendarBookingConfig {
   minAdvanceHours?: number;      // Tempo mínimo de antecedência (horas)
   maxAdvanceDays?: number;       // Distância máxima permitida (dias)
   allowSimultaneous?: boolean;   // Permitir agendamentos simultâneos
+  externalWebhookUrl?: string;   // Webhook externo para enviar submissões
+  confirmationTitle?: string;   // Título da mensagem de confirmação
+  confirmationFooter?: string;  // Rodapé da mensagem de confirmação
 }
 
 export interface WorkflowExecutionConfig {

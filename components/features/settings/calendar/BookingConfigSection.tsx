@@ -181,6 +181,69 @@ export function BookingConfigSection({
         </div>
       </div>
 
+      {/* Webhook externo */}
+      <div className="mt-4">
+        <div className="rounded-xl border border-white/10 bg-zinc-900/50 p-4">
+          <div className="text-xs text-gray-400 flex items-center gap-2 mb-2">
+            <Calendar size={12} />
+            Webhook externo (n8n, Make, etc.)
+          </div>
+          <p className="text-xs text-gray-500 mb-3">
+            Envia os dados do agendamento para a URL informada quando o Flow termina.
+          </p>
+          {isEditingCalendarBooking ? (
+            <input
+              type="url"
+              value={calendarDraft.externalWebhookUrl || ''}
+              onChange={(e) => updateCalendarDraft({ externalWebhookUrl: e.target.value })}
+              placeholder="https://seu-webhook.com/flow"
+              className="w-full px-3 py-2 bg-zinc-900/50 border border-white/10 rounded-lg text-sm text-white"
+            />
+          ) : (
+            <div className="text-sm text-white font-mono">
+              {calendarDraft.externalWebhookUrl || 'Nao configurado'}
+            </div>
+          )}
+        </div>
+      </div>
+
+      {/* Mensagem de confirmação */}
+      <div className="mt-4">
+        <div className="rounded-xl border border-white/10 bg-zinc-900/50 p-4">
+          <div className="text-xs text-gray-400 flex items-center gap-2 mb-2">
+            <Calendar size={12} />
+            Mensagem de confirmação
+          </div>
+          <p className="text-xs text-gray-500 mb-3">
+            Texto que o usuário recebe quando finaliza o Flow de agendamento.
+          </p>
+          {isEditingCalendarBooking ? (
+            <div className="space-y-2">
+              <input
+                type="text"
+                value={calendarDraft.confirmationTitle || ''}
+                onChange={(e) => updateCalendarDraft({ confirmationTitle: e.target.value })}
+                placeholder="Agendamento confirmado ✅"
+                className="w-full px-3 py-2 bg-zinc-900/50 border border-white/10 rounded-lg text-sm text-white"
+              />
+              <input
+                type="text"
+                value={calendarDraft.confirmationFooter || ''}
+                onChange={(e) => updateCalendarDraft({ confirmationFooter: e.target.value })}
+                placeholder="Qualquer ajuste, responda esta mensagem."
+                className="w-full px-3 py-2 bg-zinc-900/50 border border-white/10 rounded-lg text-sm text-white"
+              />
+            </div>
+          ) : (
+            <div className="text-sm text-white font-mono">
+              {(calendarDraft.confirmationTitle || 'Agendamento confirmado ✅')}{' '}
+              ·{' '}
+              {(calendarDraft.confirmationFooter || 'Qualquer ajuste, responda esta mensagem.')}
+            </div>
+          )}
+        </div>
+      </div>
+
       {/* Horários de Funcionamento */}
       <div className="mt-6">
         <div className="text-xs text-gray-400 mb-3 flex items-center gap-2">

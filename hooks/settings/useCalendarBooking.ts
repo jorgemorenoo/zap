@@ -20,6 +20,9 @@ export const CALENDAR_BOOKING_FALLBACK: CalendarBookingConfig = {
   minAdvanceHours: 4,      // 4 horas de antecedência mínima
   maxAdvanceDays: 14,      // Até 2 semanas no futuro
   allowSimultaneous: false, // Não permitir agendamentos simultâneos
+  externalWebhookUrl: '', // Webhook externo opcional
+  confirmationTitle: '',
+  confirmationFooter: '',
 };
 
 export const MIN_ADVANCE_OPTIONS = [
@@ -101,7 +104,10 @@ export interface UseCalendarBookingReturn {
   setIsEditingCalendarBooking: (editing: boolean) => void;
   calendarDraft: CalendarBookingConfig;
   updateCalendarDraft: (patch: Partial<CalendarBookingConfig>) => void;
-  updateWorkingHours: (day: string, patch: Partial<{ enabled: boolean; start: string; end: string }>) => void;
+  updateWorkingHours: (
+    day: string,
+    patch: Partial<{ enabled: boolean; start: string; end: string; slots: Array<{ start: string; end: string }> }>
+  ) => void;
   handleSaveCalendarBooking: () => Promise<void>;
 
   // Auth status

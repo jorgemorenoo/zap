@@ -112,6 +112,18 @@ export interface CalendarBookingConfig {
   slotBufferMinutes: number;
   /** Working hours for each day */
   workingHours: WorkingHoursDay[];
+  /** Minimum advance hours allowed */
+  minAdvanceHours?: number;
+  /** Maximum advance days allowed */
+  maxAdvanceDays?: number;
+  /** Allow simultaneous bookings */
+  allowSimultaneous?: boolean;
+  /** External webhook to receive flow submissions */
+  externalWebhookUrl?: string;
+  /** Confirmation message title */
+  confirmationTitle?: string;
+  /** Confirmation message footer */
+  confirmationFooter?: string;
 }
 
 // =============================================================================

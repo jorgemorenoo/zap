@@ -6,7 +6,6 @@
  */
 
 import { formatInTimeZone, fromZonedTime } from 'date-fns-tz'
-import { ptBR } from 'date-fns/locale'
 import {
   getCalendarConfig,
   listBusyTimes,
@@ -115,6 +114,34 @@ function isWorkingDay(date: Date, timeZone: string, workingHours: WorkingHoursDa
 function parseTimeToMinutes(value: string): number {
   const [hh, mm] = value.split(':').map(Number)
   return (hh || 0) * 60 + (mm || 0)
+}
+
+const WEEKDAY_FULL_LABELS: Record<Weekday, string> = {
+  mon: 'Segunda',
+  tue: 'Terca',
+  wed: 'Quarta',
+  thu: 'Quinta',
+  fri: 'Sexta',
+  sat: 'Sabado',
+  sun: 'Domingo',
+}
+
+function getWeekdayLabel(date: Date, timeZone: string): string {
+  const isoDay = Number(formatInTimeZone(date, timeZone, 'i'))
+  const dayKey = WEEKDAY_KEYS[isoDay - 1]
+  return WEEKDAY_FULL_LABELS[dayKey]
+}
+
+function formatDateLabel(dateStr: string, timeZone: string): string {
+  const date = fromZonedTime(`${dateStr}T00:00:00`, timeZone)
+  const dayLabel = getWeekdayLabel(date, timeZone)
+  return `${formatInTimeZone(date, timeZone, 'dd/MM/yyyy')} (${dayLabel})`
+}
+
+function formatDateChip(dateStr: string, timeZone: string): string {
+  const date = fromZonedTime(`${dateStr}T00:00:00`, timeZone)
+  const dayLabel = getWeekdayLabel(date, timeZone)
+  return `${dayLabel} - ${formatInTimeZone(date, timeZone, 'dd/MM')}`
 }
 
 type CalendarPickerData = {
@@ -411,23 +438,28 @@ async function handleDataExchange(
 
         if (slots.length === 0) {
           const calendarPicker = await getCalendarPickerData()
+          const config = await getCalendarBookingConfig()
+          const formattedChip = formatDateChip(selectedDate, config.timezone)
           return createSuccessResponse('BOOKING_START', {
             ...data,
             min_date: calendarPicker.minDate,
             max_date: calendarPicker.maxDate,
             include_days: calendarPicker.includeDays,
             unavailable_dates: calendarPicker.unavailableDates,
-            error_message: 'Nenhum horario disponivel nesta data. Escolha outra data.',
+            error_message: `${formattedChip} sem horarios. Escolha outra data.`,
             has_error: true,
           })
         }
+
+        const config = await getCalendarBookingConfig()
+        const formattedDate = formatDateLabel(selectedDate, config.timezone)
 
         return createSuccessResponse('SELECT_TIME', {
           selected_service: selectedService,
           selected_date: selectedDate,
           slots,
           title: 'Escolha o Horario',
-          subtitle: `Horarios disponiveis para ${selectedDate}`,
+          subtitle: `Horarios disponiveis para ${formattedDate}`,
         })
       }
 
@@ -475,9 +507,8 @@ async function handleDataExchange(
         const slotDate = new Date(selectedSlot)
         const config = await getCalendarBookingConfig()
         const formattedTime = formatInTimeZone(slotDate, config.timezone, 'HH:mm')
-        const formattedDate = formatInTimeZone(slotDate, config.timezone, "d 'de' MMMM", {
-          locale: ptBR,
-        })
+        const dateKey = formatInTimeZone(slotDate, config.timezone, 'yyyy-MM-dd')
+        const formattedDate = formatDateLabel(dateKey, config.timezone)
 
         const serviceInfo = DEFAULT_SERVICES.find((s) => s.id === selectedService)
         const serviceName = serviceInfo?.title || selectedService
@@ -486,6 +517,12 @@ async function handleDataExchange(
         return createCloseResponse({
           success: true,
           event_id: result.eventId,
+          selected_service: selectedService,
+          selected_date: formatInTimeZone(slotDate, config.timezone, 'yyyy-MM-dd'),
+          selected_slot: selectedSlot,
+          customer_name: customerName.trim(),
+          customer_phone: customerPhone || '',
+          notes: notes || '',
           message: `Agendamento confirmado!\n\n${serviceName}\n${formattedDate} as ${formattedTime}\n\nVoce recebera um lembrete.`,
         })
       }
@@ -518,9 +555,13 @@ async function handleBack(
       const selectedDate = data.selected_date as string
       if (selectedDate) {
         const slots = await getAvailableSlots(selectedDate)
+        const config = await getCalendarBookingConfig()
+        const formattedDate = formatDateLabel(selectedDate, config.timezone)
         return createSuccessResponse('SELECT_TIME', {
           ...data,
           slots,
+          title: 'Escolha o Horario',
+          subtitle: `Horarios disponiveis para ${formattedDate}`,
         })
       }
       return handleInit()

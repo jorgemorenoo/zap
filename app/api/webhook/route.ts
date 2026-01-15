@@ -44,14 +44,58 @@ async function getWhatsAppAccessToken(): Promise<string | null> {
 // Get or generate webhook verify token (Supabase settings preferred, env var fallback)
 import { getVerifyToken } from '@/lib/verify-token'
 
-async function getCalendarTimeZone(): Promise<string | null> {
+async function getCalendarBookingSettings(): Promise<{
+  timezone: string | null
+  externalWebhookUrl: string | null
+  confirmationTitle: string | null
+  confirmationFooter: string | null
+}> {
   try {
     const raw = await settingsDb.get('calendar_booking_config')
-    if (!raw) return null
+    if (!raw) {
+      return {
+        timezone: null,
+        externalWebhookUrl: null,
+        confirmationTitle: null,
+        confirmationFooter: null,
+      }
+    }
     const parsed = JSON.parse(raw)
-    return typeof parsed?.timezone === 'string' ? parsed.timezone : null
+    return {
+      timezone: typeof parsed?.timezone === 'string' ? parsed.timezone : null,
+      externalWebhookUrl: typeof parsed?.externalWebhookUrl === 'string' ? parsed.externalWebhookUrl : null,
+      confirmationTitle: typeof parsed?.confirmationTitle === 'string' ? parsed.confirmationTitle : null,
+      confirmationFooter: typeof parsed?.confirmationFooter === 'string' ? parsed.confirmationFooter : null,
+    }
   } catch {
-    return null
+    return {
+      timezone: null,
+      externalWebhookUrl: null,
+      confirmationTitle: null,
+      confirmationFooter: null,
+    }
+  }
+}
+
+async function sendExternalWebhook(payload: Record<string, unknown>): Promise<void> {
+  const settings = await getCalendarBookingSettings()
+  const webhookUrl = settings?.externalWebhookUrl?.trim()
+  if (!webhookUrl) return
+
+  const controller = new AbortController()
+  const timeoutId = setTimeout(() => controller.abort(), 5000)
+
+  try {
+    await fetch(webhookUrl, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
+      signal: controller.signal,
+    })
+  } catch (e) {
+    console.warn('[Webhook] Falha ao enviar payload para webhook externo (best-effort):', e)
+  } finally {
+    clearTimeout(timeoutId)
   }
 }
 
@@ -886,47 +930,180 @@ export async function POST(request: NextRequest) {
                 }
               }
 
+              // Enviar payload para webhook externo (se configurado)
+              try {
+                const settings = await getCalendarBookingSettings()
+                const timezone = settings?.timezone || 'America/Sao_Paulo'
+                const responseObj = (responseJson as any) || {}
+                const selectedDate = typeof responseObj.selected_date === 'string' ? responseObj.selected_date : null
+                const selectedSlot = typeof responseObj.selected_slot === 'string' ? responseObj.selected_slot : null
+                const service = typeof responseObj.selected_service === 'string' ? responseObj.selected_service : null
+                const customerName = typeof responseObj.customer_name === 'string' ? responseObj.customer_name : null
+                const customerPhone = typeof responseObj.customer_phone === 'string' ? responseObj.customer_phone : null
+                const notes = typeof responseObj.notes === 'string' ? responseObj.notes : null
+                const formattedDate = selectedDate
+                  ? selectedDate.split('-').reverse().join('/')
+                  : null
+                const formattedWeekday = selectedDate
+                  ? new Intl.DateTimeFormat('pt-BR', { weekday: 'long', timeZone: timezone }).format(
+                    new Date(`${selectedDate}T00:00:00`)
+                  )
+                  : null
+
+                await sendExternalWebhook({
+                  event: 'flow_submission',
+                  source: 'whatsapp',
+                  message_id: messageId || null,
+                  message_timestamp: messageTimestamp || null,
+                  from_phone: normalizedFrom,
+                  wa_id: from || null,
+                  flow_id: flowId,
+                  flow_name: flowName,
+                  flow_token: flowToken,
+                  phone_number_id: phoneNumberId,
+                  waba_id: wabaId,
+                  contact_id: contactId,
+                  campaign_id: campaignId,
+                  selected_service: service,
+                  selected_date: selectedDate,
+                  selected_slot: selectedSlot,
+                  customer_name: customerName,
+                  customer_phone: customerPhone,
+                  notes,
+                  formatted_date: formattedDate,
+                  formatted_weekday: formattedWeekday,
+                  response_json: responseJson,
+                })
+              } catch (e) {
+                console.warn('[Webhook] Falha ao enviar webhook externo (best-effort):', e)
+              }
+
               // Confirmação automática após conclusão do Flow
               try {
                 const token = await getWhatsAppAccessToken()
                 if (token && phoneNumberId && normalizedFrom) {
-                  const timezone = (await getCalendarTimeZone()) || 'America/Sao_Paulo'
-                  const responseObj = (responseJson as any) || {}
-                  const selectedDate = typeof responseObj.selected_date === 'string' ? responseObj.selected_date : null
-                  const selectedSlot = typeof responseObj.selected_slot === 'string' ? responseObj.selected_slot : null
-                  const service = typeof responseObj.selected_service === 'string' ? responseObj.selected_service : null
-                  const formattedDate = selectedDate
-                    ? selectedDate.split('-').reverse().join('/')
-                    : null
-                  const formattedTime = selectedSlot
-                    ? new Intl.DateTimeFormat('pt-BR', {
-                      timeZone: timezone,
-                      hour: '2-digit',
-                      minute: '2-digit',
-                    }).format(new Date(selectedSlot))
-                    : null
+                  const settings = await getCalendarBookingSettings()
+                  const timezone = settings?.timezone || 'America/Sao_Paulo'
+                  const confirmationTitle =
+                    settings?.confirmationTitle?.trim() || 'Agendamento confirmado ✅'
+                  const confirmationFooter =
+                    settings?.confirmationFooter?.trim() || 'Qualquer ajuste, responda esta mensagem.'
+                  const responseObj =
+                    responseJson && typeof responseJson === 'object' ? (responseJson as any) : {}
+                  const sendConfirmationFlag =
+                    responseObj.send_confirmation ?? responseObj.__send_confirmation ?? null
+                  const shouldSendConfirmation = !(
+                    sendConfirmationFlag === false ||
+                    sendConfirmationFlag === 'false'
+                  )
 
-                  const parts = [
-                    'Agendamento confirmado ✅',
-                    service ? `Servico: ${service}` : null,
-                    formattedDate ? `Data: ${formattedDate}` : null,
-                    formattedTime ? `Horario: ${formattedTime}` : null,
-                    'Qualquer ajuste, responda esta mensagem.',
-                  ].filter(Boolean)
+                  if (shouldSendConfirmation) {
+                    const flowTitleOverride =
+                      typeof responseObj.confirmation_title === 'string'
+                        ? responseObj.confirmation_title.trim()
+                        : ''
+                    const flowFooterOverride =
+                      typeof responseObj.confirmation_footer === 'string'
+                        ? responseObj.confirmation_footer.trim()
+                        : ''
+                    const selectedDate = typeof responseObj.selected_date === 'string' ? responseObj.selected_date : null
+                    const selectedSlot = typeof responseObj.selected_slot === 'string' ? responseObj.selected_slot : null
+                    const service = typeof responseObj.selected_service === 'string' ? responseObj.selected_service : null
+                    const customerName = typeof responseObj.customer_name === 'string' ? responseObj.customer_name : null
+                    const customerPhone = typeof responseObj.customer_phone === 'string' ? responseObj.customer_phone : null
+                    const notes = typeof responseObj.notes === 'string' ? responseObj.notes : null
+                    const hasBookingFields = Boolean(selectedDate || selectedSlot || service)
 
-                  await fetch(`https://graph.facebook.com/v21.0/${phoneNumberId}/messages`, {
-                    method: 'POST',
-                    headers: {
-                      Authorization: `Bearer ${token}`,
-                      'Content-Type': 'application/json',
-                    },
-                    body: JSON.stringify({
-                      messaging_product: 'whatsapp',
-                      to: normalizedFrom,
-                      type: 'text',
-                      text: { body: parts.join('\n') },
-                    }),
-                  })
+                    let parts: string[] = []
+
+                    if (hasBookingFields) {
+                      const formattedDate = selectedDate
+                        ? selectedDate.split('-').reverse().join('/')
+                        : null
+                      const formattedTime = selectedSlot
+                        ? new Intl.DateTimeFormat('pt-BR', {
+                          timeZone: timezone,
+                          hour: '2-digit',
+                          minute: '2-digit',
+                        }).format(new Date(selectedSlot))
+                        : null
+                      const formattedWeekday = selectedDate
+                        ? new Intl.DateTimeFormat('pt-BR', { weekday: 'long', timeZone: timezone }).format(
+                          new Date(`${selectedDate}T00:00:00`)
+                        )
+                        : null
+
+                      parts = [
+                        confirmationTitle,
+                        service ? `Servico: ${service}` : null,
+                        formattedDate
+                          ? `Data: ${formattedDate}${formattedWeekday ? ` (${formattedWeekday})` : ''}`
+                          : null,
+                        formattedTime ? `Horario: ${formattedTime}` : null,
+                        customerName ? `Nome: ${customerName}` : null,
+                        customerPhone ? `Telefone: ${customerPhone}` : null,
+                        notes ? `Observacoes: ${notes}` : null,
+                        confirmationFooter,
+                      ].filter(Boolean) as string[]
+                    } else {
+                      const ignoredKeys = new Set([
+                        'flow_id',
+                        'flow_token',
+                        'flow_name',
+                        'event_id',
+                        'success',
+                        'message',
+                        'send_confirmation',
+                        '__send_confirmation',
+                        'confirmation_title',
+                        'confirmation_footer',
+                      ])
+
+                      const entries = Object.entries(responseObj || {}).filter(([key, value]) => {
+                        if (ignoredKeys.has(key)) return false
+                        if (value == null) return false
+                        if (typeof value === 'string' && !value.trim()) return false
+                        return true
+                      })
+
+                      const lines = entries.map(([key, value]) => {
+                        const label = key.replace(/_/g, ' ').replace(/^./, (c) => c.toUpperCase())
+                        let display = ''
+                        if (Array.isArray(value)) {
+                          display = value.join(', ')
+                        } else if (typeof value === 'boolean') {
+                          display = value ? 'Sim' : 'Nao'
+                        } else if (typeof value === 'object') {
+                          display = JSON.stringify(value)
+                        } else {
+                          display = String(value)
+                        }
+                        return `${label}: ${display}`
+                      })
+
+                      const genericTitle = flowTitleOverride || 'Resposta registrada ✅'
+                      const genericFooter = flowFooterOverride || confirmationFooter
+                      parts = [
+                        genericTitle,
+                        ...lines,
+                        genericFooter,
+                      ].filter(Boolean) as string[]
+                    }
+
+                    await fetch(`https://graph.facebook.com/v21.0/${phoneNumberId}/messages`, {
+                      method: 'POST',
+                      headers: {
+                        Authorization: `Bearer ${token}`,
+                        'Content-Type': 'application/json',
+                      },
+                      body: JSON.stringify({
+                        messaging_product: 'whatsapp',
+                        to: normalizedFrom,
+                        type: 'text',
+                        text: { body: parts.join('\n') },
+                      }),
+                    })
+                  }
 
                 }
               } catch (e) {

@@ -30,6 +30,9 @@ export type FlowFormSpecV1 = {
   title: string
   intro?: string
   submitLabel: string
+  sendConfirmation?: boolean
+  confirmationTitle?: string
+  confirmationFooter?: string
   fields: FlowFormFieldV1[]
 }
 
@@ -68,6 +71,9 @@ export function normalizeFlowFormSpec(input: unknown, fallbackTitle?: string): F
     title: baseTitle,
     intro: 'Preencha os dados abaixo:',
     submitLabel: 'Enviar',
+    sendConfirmation: true,
+    confirmationTitle: '',
+    confirmationFooter: '',
     fields: [],
   }
 
@@ -139,6 +145,16 @@ export function normalizeFlowFormSpec(input: unknown, fallbackTitle?: string): F
     title: safeString(input.title, defaults.title).trim() || defaults.title,
     intro: safeString(input.intro, defaults.intro).trim() || defaults.intro,
     submitLabel: safeString(input.submitLabel, defaults.submitLabel).trim() || defaults.submitLabel,
+    sendConfirmation:
+      typeof (input as any).sendConfirmation === 'boolean'
+        ? (input as any).sendConfirmation
+        : defaults.sendConfirmation,
+    confirmationTitle:
+      safeString((input as any).confirmationTitle, defaults.confirmationTitle).trim() ||
+      defaults.confirmationTitle,
+    confirmationFooter:
+      safeString((input as any).confirmationFooter, defaults.confirmationFooter).trim() ||
+      defaults.confirmationFooter,
     fields,
   }
 }
@@ -178,6 +194,13 @@ export function flowJsonToFormSpec(flowJson: unknown, fallbackTitle?: string): F
 
   const footerNode = children.find((c) => c?.type === 'Footer')
   const submitLabel = footerNode ? asText(footerNode.label).trim() || base.submitLabel : base.submitLabel
+  const footerPayload = footerNode?.['on-click-action']?.payload || {}
+  const sendConfirmation =
+    typeof footerPayload?.send_confirmation === 'boolean'
+      ? footerPayload.send_confirmation !== false
+      : true
+  const confirmationTitle = asText(footerPayload?.confirmation_title || '').trim()
+  const confirmationFooter = asText(footerPayload?.confirmation_footer || '').trim()
 
   const fields: FlowFormFieldV1[] = []
   for (const child of children) {
@@ -278,6 +301,9 @@ export function flowJsonToFormSpec(flowJson: unknown, fallbackTitle?: string): F
       title,
       intro,
       submitLabel,
+      confirmationTitle,
+      confirmationFooter,
+      sendConfirmation,
       fields,
     },
     fallbackTitle,
@@ -384,6 +410,15 @@ export function generateFlowJsonFromFormSpec(form: FlowFormSpecV1): Record<strin
   const payload: Record<string, string> = {}
   for (const field of form.fields) {
     payload[field.name] = `\${form.${field.name}}`
+  }
+  if (form.sendConfirmation === false) {
+    payload.send_confirmation = 'false'
+  }
+  if (form.confirmationTitle && form.confirmationTitle.trim()) {
+    payload.confirmation_title = form.confirmationTitle.trim()
+  }
+  if (form.confirmationFooter && form.confirmationFooter.trim()) {
+    payload.confirmation_footer = form.confirmationFooter.trim()
   }
 
   children.push({

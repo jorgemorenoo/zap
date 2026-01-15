@@ -323,7 +323,7 @@ export const campaignService = {
   },
 
   duplicate: async (id: string): Promise<Campaign> => {
-    const response = await fetch(`/api/campaigns/${id}/duplicate`, { method: 'POST' });
+    const response = await fetch(`/api/campaigns/${id}/clone`, { method: 'POST' });
     if (!response.ok) {
       throw new Error('Failed to duplicate campaign');
     }
