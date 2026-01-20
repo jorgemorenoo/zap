@@ -296,6 +296,13 @@ export async function POST(req: Request) {
       );
       resolvedDbUrl = db.dbUrl;
 
+      // Log para debug - mostrar info da conexão (sem senha)
+      console.log('[run-stream] DB URL resolved:', {
+        host: db.host,
+        role: db.role,
+        ttlSeconds: db.ttlSeconds,
+      });
+
       await sendPhase('resolve_keys');
 
       // Step: setup_envs

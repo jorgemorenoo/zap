@@ -1,12 +1,33 @@
 # Google File Search - Melhores Práticas
 
 > Documentação interna sobre o uso do Google File Search (RAG) com Gemini no SmartZap.
+>
+> **Última atualização:** 20 Janeiro 2026
+> **Validado contra:** Documentação oficial Google, Vercel AI SDK v6, Google Gemini Cookbook
+
+## Versões Requeridas
+
+| Pacote | Versão Mínima | Versão Atual (SmartZap) | Notas |
+|--------|---------------|-------------------------|-------|
+| `@ai-sdk/google` | **3.0.5** | 3.0.10 ✅ | Gemini 3 File Search adicionado em 3.0.5 (6 Jan 2026) |
+| `ai` | 6.0.x | 6.0.42 ✅ | Core do AI SDK |
+
+### Changelog Relevante
+
+- **@ai-sdk/google@3.0.5** (6 Jan 2026): `Add file support for Gemini 3 models` - PR #11163
+- **@ai-sdk/google@3.0.6** (7 Jan 2026): `fix(google): parse structured output when using google provider tools`
+
+> ⚠️ **Importante**: Versões anteriores a 3.0.5 NÃO suportam File Search com Gemini 3 (`gemini-3-pro-preview`, `gemini-3-flash-preview`)
 
 ## Regra de Ouro: Uma Tool por Chamada
 
 **NUNCA combine `file_search` com outras tools na mesma chamada.**
 
-O File Search é uma "provider-defined tool" do Google que tem comportamento especial - ele injeta contexto automaticamente e não pode ser combinado com tools customizadas.
+> **Documentação Oficial do Google:**
+> "**Tool incompatibility:** File Search cannot be combined with other tools like Grounding with Google Search, URL Context, etc. at this time."
+> — [ai.google.dev/gemini-api/docs/file-search](https://ai.google.dev/gemini-api/docs/file-search)
+
+O File Search é uma "provider-defined tool" do Google que tem comportamento especial - ele injeta contexto automaticamente e não pode ser combinado com tools customizadas (como nossa `respond` tool).
 
 ### Padrão Correto
 
@@ -163,7 +184,40 @@ O File Search já injeta contexto automaticamente - não precisa de:
 - "Baseado no contexto fornecido..."
 - Qualquer modificação do prompt original
 
-## Referências
+## Modelos Suportados
 
-- [AI SDK Google Provider](https://sdk.vercel.ai/providers/ai-sdk-providers/google-generative-ai)
-- [Google File Search API](https://ai.google.dev/gemini-api/docs/file-search)
+Apenas estes modelos suportam File Search:
+
+- `gemini-3-pro-preview`
+- `gemini-3-flash-preview`
+- `gemini-2.5-pro`
+- `gemini-2.5-flash`
+
+## Preços e Limites
+
+### Preços (Janeiro 2026)
+
+| Item | Preço |
+|------|-------|
+| Indexação | $0.15 por 1M tokens |
+| **Storage** | **GRATUITO** |
+| **Query embeddings** | **GRATUITO** |
+| Tokens retornados | Preço normal de context tokens |
+
+### Limites
+
+| Limite | Valor |
+|--------|-------|
+| Max file size | 100 MB |
+| Store size (Free tier) | 1 GB |
+| Store size (Tier 1) | 10 GB |
+| Store size (Tier 2) | 100 GB |
+| Store size (Tier 3) | 1 TB |
+| **Recomendado para latência ótima** | **< 20 GB** |
+
+## Referências Oficiais
+
+- [Vercel AI SDK - Google Provider](https://ai-sdk.dev/providers/ai-sdk-providers/google-generative-ai#file-search)
+- [Google File Search Documentation](https://ai.google.dev/gemini-api/docs/file-search)
+- [Google Gemini Cookbook - File Search](https://github.com/google-gemini/cookbook/blob/main/quickstarts/File_Search.ipynb)
+- [File Search API Reference](https://ai.google.dev/api/file-search/file-search-stores)

@@ -113,7 +113,18 @@ export async function runSchemaMigration(dbUrl: string) {
   }
 
   const normalizedDbUrl = stripSslModeParam(dbUrl);
-  console.log('[migrations] Conectando ao banco (URL mascarada)...');
+
+  // Log URL mascarada para debug
+  try {
+    const urlObj = new URL(normalizedDbUrl);
+    console.log('[migrations] Host:', urlObj.hostname);
+    console.log('[migrations] Port:', urlObj.port);
+    console.log('[migrations] Database:', urlObj.pathname);
+    console.log('[migrations] User:', urlObj.username);
+  } catch {
+    console.log('[migrations] URL não parseável');
+  }
+  console.log('[migrations] Conectando ao banco...');
 
   const createClient = () =>
     new Client({
@@ -127,7 +138,12 @@ export async function runSchemaMigration(dbUrl: string) {
   console.log('[migrations] Conexão estabelecida com sucesso!');
 
   try {
-    // SmartZap não usa Storage, então não precisa esperar.
+    // Aguarda o banco estar 100% pronto (igual ao CRM que espera storage.buckets)
+    // Verifica se consegue fazer uma query simples
+    console.log('[migrations] Verificando se banco está pronto...');
+    await client.query('SELECT 1');
+    console.log('[migrations] Banco pronto, iniciando migrations...');
+
     // Executa todos os arquivos de migration em ordem.
     for (const file of migrationFiles) {
       console.log(`[migrations] Aplicando ${file}...`);
