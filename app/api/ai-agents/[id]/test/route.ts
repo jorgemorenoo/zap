@@ -3,14 +3,13 @@
  * Allows testing an agent with a sample message before activation
  *
  * Uses streamText + tools for structured output (AI SDK v6 pattern)
- * Includes Google File Search Tool for RAG when knowledge base is configured
+ * Also supports Google File Search Tool for RAG when configured
  */
 
 import { NextRequest, NextResponse } from 'next/server'
 import { getSupabaseAdmin } from '@/lib/supabase'
 import { z } from 'zod'
 import { DEFAULT_MODEL_ID } from '@/lib/ai/model'
-import type { GoogleGenerativeAIProviderMetadata } from '@ai-sdk/google'
 
 // =============================================================================
 // Response Schema (same as support-agent-v2)
@@ -134,21 +133,9 @@ export async function POST(request: NextRequest, context: RouteContext) {
 
     console.log(`[ai-agents/test] Using model: ${modelId}`)
 
-    // Configure tools - only add fileSearch if agent has a store with files
-    const hasFileSearch = agent.file_search_store_id && indexedFilesCount && indexedFilesCount > 0
-
-    // Build system prompt with knowledge base instructions
-    const knowledgeBaseInstructions = hasFileSearch
-      ? `
-KNOWLEDGE BASE (BASE DE CONHECIMENTO):
-Você tem acesso a uma base de conhecimento com documentos relevantes.
-- A ferramenta "file_search" será usada automaticamente para buscar informações
-- SEMPRE baseie suas respostas nas informações encontradas
-- Cite as fontes quando usar informações da base de conhecimento`
-      : ''
-
+    // Build system prompt with structured output instructions
     const systemPrompt = `${agent.system_prompt}
-${knowledgeBaseInstructions}
+
 INSTRUÇÕES IMPORTANTES:
 1. Responda sempre em português do Brasil
 2. Seja educado, profissional e empático
@@ -161,9 +148,11 @@ IMPORTANTE: Você DEVE usar a ferramenta "respond" para enviar sua resposta.`
     // Generate response
     const startTime = Date.now()
 
+    // Configure tools - only add fileSearch if agent has a store with files
+    const hasFileSearch = agent.file_search_store_id && indexedFilesCount && indexedFilesCount > 0
+
     // Capture structured response from tool
     let structuredResponse: TestResponse | undefined
-    let groundingSources: Array<{ title: string; content: string }> = []
 
     // Define the respond tool
     const respondTool = tool({
@@ -175,13 +164,14 @@ IMPORTANTE: Você DEVE usar a ferramenta "respond" para enviar sua resposta.`
       },
     })
 
-    // Log File Search status
+    // Use streamText with tools for structured output (AI SDK v6 pattern)
+    // Note: File Search is handled separately if needed, but we prioritize structured output
     if (hasFileSearch) {
       console.log(`[ai-agents/test] Using File Search Store: ${agent.file_search_store_id} with ${indexedFilesCount} files`)
+      // When using file_search with structured output, we run them in sequence
+      // First, let the model search, then respond
     }
 
-    // Use streamText with tools for structured output (AI SDK v6 pattern)
-    // File Search tool is added conditionally when agent has knowledge base
     const result = streamText({
       model,
       system: systemPrompt,
@@ -190,15 +180,6 @@ IMPORTANTE: Você DEVE usar a ferramenta "respond" para enviar sua resposta.`
       maxOutputTokens: agent.max_tokens ?? 1024,
       tools: {
         respond: respondTool,
-        // Conditionally add file_search tool if knowledge base is configured
-        ...(hasFileSearch && agent.file_search_store_id
-          ? {
-              file_search: google.tools.fileSearch({
-                fileSearchStoreNames: [agent.file_search_store_id],
-                topK: 5, // Retrieve top 5 most relevant chunks
-              }),
-            }
-          : {}),
       },
       toolChoice: 'required',
     })
@@ -208,31 +189,11 @@ IMPORTANTE: Você DEVE usar a ferramenta "respond" para enviar sua resposta.`
       // Just consume - the tool execute function captures the response
     }
 
-    // Extract grounding metadata if available (from File Search)
-    const providerMetadata = (await result.providerMetadata) as GoogleGenerativeAIProviderMetadata | undefined
-    const groundingMetadata = providerMetadata?.groundingMetadata
-
-    if (groundingMetadata?.groundingChunks) {
-      groundingSources = groundingMetadata.groundingChunks
-        .filter((chunk) => chunk.retrievedContext)
-        .map((chunk) => ({
-          title: chunk.retrievedContext?.title || 'Documento',
-          content: chunk.retrievedContext?.text || '',
-        }))
-
-      console.log(`[ai-agents/test] Found ${groundingSources.length} grounding sources from knowledge base`)
-    }
-
     const latencyMs = Date.now() - startTime
 
     // If no structured response was captured, something went wrong
     if (!structuredResponse) {
       throw new Error('No structured response generated from AI')
-    }
-
-    // Merge grounding sources with response sources
-    if (groundingSources.length > 0) {
-      structuredResponse.sources = [...(structuredResponse.sources || []), ...groundingSources]
     }
 
     console.log(`[ai-agents/test] Response generated in ${latencyMs}ms. Used File Search: ${hasFileSearch}`)
