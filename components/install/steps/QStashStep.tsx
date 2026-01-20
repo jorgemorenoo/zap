@@ -25,15 +25,19 @@ export function QStashStep({ onComplete }: QStashStepProps) {
   const [error, setError] = useState<string | null>(null);
 
   // Valida formato do QStash token
+  // Pode ser: base64 JSON (eyJ...), JWT (3 partes com .), ou prefixo qstash_
   const isValidToken = (t: string): boolean => {
     const trimmed = t.trim();
-    // JWT format (3 parts) ou prefixo qstash_
-    return trimmed.split('.').length === 3 || trimmed.startsWith('qstash_');
+    return (
+      trimmed.startsWith('eyJ') ||  // Base64 JSON (formato atual do QStash)
+      trimmed.split('.').length === 3 ||  // JWT format
+      trimmed.startsWith('qstash_')  // Prefixo alternativo
+    );
   };
 
   const handleValidate = useCallback(async () => {
     if (!isValidToken(token)) {
-      setError('Token QStash inválido (deve ser JWT ou começar com qstash_)');
+      setError('Token QStash inválido');
       return;
     }
 
