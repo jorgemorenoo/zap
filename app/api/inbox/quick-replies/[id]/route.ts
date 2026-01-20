@@ -9,7 +9,7 @@ import { updateExistingQuickReply, removeQuickReply } from '@/lib/inbox/inbox-se
 const updateSchema = z.object({
   title: z.string().min(1).max(100).optional(),
   content: z.string().min(1).max(4096).optional(),
-  shortcut: z.string().max(20).optional().nullable(),
+  shortcut: z.string().max(20).nullable().optional().transform(val => val ?? undefined),
 })
 
 interface RouteParams {
