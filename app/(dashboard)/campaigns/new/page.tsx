@@ -1463,14 +1463,14 @@ export default function CampaignsNewRealPage() {
                   }
                   className={`flex items-center gap-3 rounded-2xl border px-4 py-3 text-left text-sm transition ${
                     step === item.id
-                      ? 'border-emerald-600 dark:border-emerald-400/40 bg-emerald-500/10 text-[var(--ds-text-primary)]'
+                      ? 'border-emerald-600 dark:border-emerald-400/40 bg-emerald-100 dark:bg-emerald-500/10 text-[var(--ds-text-primary)]'
                       : 'border-[var(--ds-border-default)] bg-[var(--ds-bg-surface)] text-[var(--ds-text-secondary)]'
                   } ${!isStepEnabled ? 'cursor-not-allowed opacity-40' : 'hover:text-[var(--ds-text-primary)]'}`}
                 >
                   <span
                     className={`grid h-8 w-8 shrink-0 aspect-square place-items-center rounded-full border text-xs font-semibold leading-none ${
                       step === item.id
-                        ? 'border-emerald-400 bg-emerald-500/20 text-emerald-700 dark:text-emerald-200'
+                        ? 'border-emerald-400 bg-emerald-100 dark:bg-emerald-500/20 text-emerald-700 dark:text-emerald-200'
                         : 'border-[var(--ds-border-default)] text-[var(--ds-text-secondary)]'
                     }`}
                   >
@@ -1673,9 +1673,9 @@ export default function CampaignsNewRealPage() {
               )}
 
               {templateSelected && hasTemplateVariables && (
-                <div className="rounded-2xl border border-emerald-400/30 bg-emerald-500/10 p-6 shadow-[0_12px_30px_rgba(0,0,0,0.35)]">
+                <div className="rounded-2xl border border-emerald-400/30 bg-emerald-100 dark:bg-emerald-500/10 p-6 shadow-[0_12px_30px_rgba(0,0,0,0.35)]">
                   <div className="flex items-start gap-3">
-                    <div className="flex h-10 w-10 items-center justify-center rounded-2xl bg-emerald-500/20 text-emerald-700 dark:text-emerald-200">
+                    <div className="flex h-10 w-10 items-center justify-center rounded-2xl bg-emerald-100 dark:bg-emerald-500/20 text-emerald-700 dark:text-emerald-200">
                       <Sparkles size={18} />
                     </div>
                     <div>
@@ -2035,7 +2035,7 @@ export default function CampaignsNewRealPage() {
                           onClick={() => setAudienceMode(item.value)}
                           className={`rounded-2xl border px-4 py-4 text-left text-sm ${
                             audienceMode === item.value
-                              ? 'border-emerald-600 dark:border-emerald-400/40 bg-emerald-500/10 text-[var(--ds-text-primary)]'
+                              ? 'border-emerald-600 dark:border-emerald-400/40 bg-emerald-100 dark:bg-emerald-500/10 text-[var(--ds-text-primary)]'
                               : 'border-[var(--ds-border-default)] bg-[var(--ds-bg-elevated)] text-[var(--ds-text-secondary)]'
                           }`}
                         >
@@ -2120,7 +2120,7 @@ export default function CampaignsNewRealPage() {
                                   }}
                                   className={`rounded-full border px-3 py-1 text-xs ${
                                     active
-                                      ? 'border-emerald-600 dark:border-emerald-400/40 bg-emerald-500/10 text-emerald-700 dark:text-emerald-100'
+                                      ? 'border-emerald-600 dark:border-emerald-400/40 bg-emerald-100 dark:bg-emerald-500/10 text-emerald-700 dark:text-emerald-100'
                                       : 'border-[var(--ds-border-default)] bg-[var(--ds-bg-elevated)] text-[var(--ds-text-secondary)]'
                                   } ${disabled ? 'cursor-not-allowed opacity-40' : ''}`}
                                 >
@@ -2164,7 +2164,7 @@ export default function CampaignsNewRealPage() {
                           onClick={() => setCombineMode('or')}
                           className={`rounded-full border px-3 py-1 ${
                             combineMode === 'or'
-                              ? 'border-emerald-600 dark:border-emerald-400/40 bg-emerald-500/10 text-emerald-700 dark:text-emerald-200'
+                              ? 'border-emerald-600 dark:border-emerald-400/40 bg-emerald-100 dark:bg-emerald-500/10 text-emerald-700 dark:text-emerald-200'
                               : 'border-[var(--ds-border-default)] bg-[var(--ds-bg-elevated)] text-[var(--ds-text-secondary)]'
                           }`}
                         >
@@ -2175,7 +2175,7 @@ export default function CampaignsNewRealPage() {
                           onClick={() => setCombineMode('and')}
                           className={`rounded-full border px-3 py-1 ${
                             combineMode === 'and'
-                              ? 'border-emerald-600 dark:border-emerald-400/40 bg-emerald-500/10 text-emerald-700 dark:text-emerald-200'
+                              ? 'border-emerald-600 dark:border-emerald-400/40 bg-emerald-100 dark:bg-emerald-500/10 text-emerald-700 dark:text-emerald-200'
                               : 'border-[var(--ds-border-default)] bg-[var(--ds-bg-elevated)] text-[var(--ds-text-secondary)]'
                           }`}
                         >
@@ -2205,7 +2205,7 @@ export default function CampaignsNewRealPage() {
                                   onClick={() => toggleSelection(tag, selectedTags, setSelectedTags)}
                                   className={`rounded-full border px-3 py-1 text-xs ${
                                     active
-                                      ? 'border-emerald-600 dark:border-emerald-400/40 bg-emerald-500/10 text-emerald-700 dark:text-emerald-100'
+                                      ? 'border-emerald-600 dark:border-emerald-400/40 bg-emerald-100 dark:bg-emerald-500/10 text-emerald-700 dark:text-emerald-100'
                                       : 'border-[var(--ds-border-default)] bg-[var(--ds-bg-elevated)] text-[var(--ds-text-secondary)]'
                                   }`}
                                 >
@@ -2246,7 +2246,7 @@ export default function CampaignsNewRealPage() {
                                   }}
                                   className={`rounded-full border px-3 py-1 text-xs ${
                                     active
-                                      ? 'border-emerald-600 dark:border-emerald-400/40 bg-emerald-500/10 text-emerald-700 dark:text-emerald-100'
+                                      ? 'border-emerald-600 dark:border-emerald-400/40 bg-emerald-100 dark:bg-emerald-500/10 text-emerald-700 dark:text-emerald-100'
                                       : 'border-[var(--ds-border-default)] bg-[var(--ds-bg-elevated)] text-[var(--ds-text-secondary)]'
                                   }`}
                                 >
@@ -2288,7 +2288,7 @@ export default function CampaignsNewRealPage() {
                                   }}
                                   className={`rounded-full border px-3 py-1 text-xs ${
                                     active
-                                      ? 'border-emerald-600 dark:border-emerald-400/40 bg-emerald-500/10 text-emerald-700 dark:text-emerald-100'
+                                      ? 'border-emerald-600 dark:border-emerald-400/40 bg-emerald-100 dark:bg-emerald-500/10 text-emerald-700 dark:text-emerald-100'
                                       : 'border-[var(--ds-border-default)] bg-[var(--ds-bg-elevated)] text-[var(--ds-text-secondary)]'
                                   } ${disabled ? 'cursor-not-allowed opacity-40' : ''}`}
                                 >
@@ -2655,7 +2655,7 @@ export default function CampaignsNewRealPage() {
                     onClick={() => setScheduleMode('imediato')}
                     className={`rounded-xl border px-4 py-3 text-left text-sm ${
                       scheduleMode === 'imediato'
-                        ? 'border-emerald-600 dark:border-emerald-400/40 bg-emerald-500/10 text-emerald-700 dark:text-emerald-200'
+                        ? 'border-emerald-600 dark:border-emerald-400/40 bg-emerald-100 dark:bg-emerald-500/10 text-emerald-700 dark:text-emerald-200'
                         : 'border-[var(--ds-border-default)] bg-[var(--ds-bg-elevated)] text-[var(--ds-text-secondary)]'
                     }`}
                   >
@@ -2666,7 +2666,7 @@ export default function CampaignsNewRealPage() {
                     onClick={() => setScheduleMode('agendar')}
                     className={`rounded-xl border px-4 py-3 text-left text-sm ${
                       scheduleMode === 'agendar'
-                        ? 'border-emerald-600 dark:border-emerald-400/40 bg-emerald-500/10 text-emerald-700 dark:text-emerald-200'
+                        ? 'border-emerald-600 dark:border-emerald-400/40 bg-emerald-100 dark:bg-emerald-500/10 text-emerald-700 dark:text-emerald-200'
                         : 'border-[var(--ds-border-default)] bg-[var(--ds-bg-elevated)] text-[var(--ds-text-secondary)]'
                     }`}
                   >
@@ -2744,7 +2744,7 @@ export default function CampaignsNewRealPage() {
                         onClick={() => setSelectedFolderId(null)}
                         className={`flex items-center gap-2 rounded-xl border px-4 py-3 text-left text-sm transition ${
                           selectedFolderId === null
-                            ? 'border-emerald-600 dark:border-emerald-400/40 bg-emerald-500/10 text-emerald-700 dark:text-emerald-200'
+                            ? 'border-emerald-600 dark:border-emerald-400/40 bg-emerald-100 dark:bg-emerald-500/10 text-emerald-700 dark:text-emerald-200'
                             : 'border-[var(--ds-border-default)] bg-[var(--ds-bg-elevated)] text-[var(--ds-text-secondary)] hover:border-[var(--ds-border-default)]'
                         }`}
                       >
@@ -2759,7 +2759,7 @@ export default function CampaignsNewRealPage() {
                           onClick={() => setSelectedFolderId(folder.id)}
                           className={`flex items-center gap-2 rounded-xl border px-4 py-3 text-left text-sm transition ${
                             selectedFolderId === folder.id
-                              ? 'border-emerald-600 dark:border-emerald-400/40 bg-emerald-500/10 text-emerald-700 dark:text-emerald-200'
+                              ? 'border-emerald-600 dark:border-emerald-400/40 bg-emerald-100 dark:bg-emerald-500/10 text-emerald-700 dark:text-emerald-200'
                               : 'border-[var(--ds-border-default)] bg-[var(--ds-bg-elevated)] text-[var(--ds-text-secondary)] hover:border-[var(--ds-border-default)]'
                           }`}
                         >
@@ -2899,7 +2899,7 @@ export default function CampaignsNewRealPage() {
           <div className="rounded-2xl border border-[var(--ds-border-default)] bg-[var(--ds-bg-surface)] p-6 shadow-[0_12px_30px_rgba(0,0,0,0.35)]">
             <div className="flex items-center justify-between">
               <div className="text-xs uppercase tracking-widest text-[var(--ds-text-muted)]">Resumo</div>
-              <button className="rounded-full border border-emerald-600 dark:border-emerald-400/40 bg-emerald-500/10 px-3 py-1 text-[11px] font-semibold text-emerald-700 dark:text-emerald-200">
+              <button className="rounded-full border border-emerald-600 dark:border-emerald-400/40 bg-emerald-100 dark:bg-emerald-500/10 px-3 py-1 text-[11px] font-semibold text-emerald-700 dark:text-emerald-200">
                 Campanha Rapida
               </button>
             </div>
