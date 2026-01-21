@@ -408,6 +408,7 @@ const OnboardingOverlay = ({
 import { PrefetchLink } from '@/components/ui/PrefetchLink'
 import { AccountAlertBanner } from '@/components/ui/AccountAlertBanner'
 import { DashboardSidebar, type NavItem } from '@/components/layout/DashboardSidebar'
+import { ThemeToggle } from '@/components/ui/theme-toggle'
 
 export function DashboardShell({
     children,
@@ -674,18 +675,21 @@ export function DashboardShell({
                         isSidebarExpanded && "lg:pl-56"
                     )}>
                         {/* Compact mobile header - only menu button */}
-                        <header className="lg:hidden h-12 flex items-center px-4 border-b border-[var(--ds-border-subtle)] bg-[var(--ds-bg-elevated)] shrink-0">
-                            <button
-                                className="p-2 text-[var(--ds-text-secondary)] -ml-2 focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary-500 focus-visible:outline-offset-2 rounded-md"
-                                onClick={() => {
-                                    updateSidebarExpanded(true)
-                                    setIsMobileMenuOpen(true)
-                                }}
-                                aria-label="Abrir menu de navegação"
-                            >
-                                <Menu size={20} aria-hidden="true" />
-                            </button>
-                            <span className="ml-2 text-sm font-medium text-[var(--ds-text-secondary)]">Inbox</span>
+                        <header className="lg:hidden h-12 flex items-center justify-between px-4 border-b border-[var(--ds-border-subtle)] bg-[var(--ds-bg-elevated)] shrink-0">
+                            <div className="flex items-center">
+                                <button
+                                    className="p-2 text-[var(--ds-text-secondary)] -ml-2 focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary-500 focus-visible:outline-offset-2 rounded-md"
+                                    onClick={() => {
+                                        updateSidebarExpanded(true)
+                                        setIsMobileMenuOpen(true)
+                                    }}
+                                    aria-label="Abrir menu de navegação"
+                                >
+                                    <Menu size={20} aria-hidden="true" />
+                                </button>
+                                <span className="ml-2 text-sm font-medium text-[var(--ds-text-secondary)]">Inbox</span>
+                            </div>
+                            <ThemeToggle compact />
                         </header>
                         <PageContentShell>
                             {children}
@@ -744,7 +748,8 @@ export function DashboardShell({
                         </nav>
                     </div>
 
-                    <div className="flex items-center gap-6">
+                    <div className="flex items-center gap-3">
+                        <ThemeToggle compact />
                         <button className="relative group focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary-500 focus-visible:outline-offset-2 rounded-md p-1" aria-label="Notificações (1 nova)">
                             <Bell size={20} className="text-[var(--ds-text-muted)] group-hover:text-[var(--ds-text-primary)] transition-colors cursor-pointer" aria-hidden="true" />
                             <span className="absolute -top-0.5 -right-0.5 w-2.5 h-2.5 bg-primary-500 rounded-full border-2 border-[var(--ds-bg-base)]" aria-label="1 notificação não lida"></span>

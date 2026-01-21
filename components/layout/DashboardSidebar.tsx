@@ -11,7 +11,6 @@ import {
   LucideIcon,
 } from 'lucide-react'
 import { PrefetchLink } from '@/components/ui/PrefetchLink'
-import { ThemeToggle } from '@/components/ui/theme-toggle'
 import { cn } from '@/lib/utils'
 
 // =============================================================================
@@ -137,7 +136,6 @@ const CompactSidebar = memo(function CompactSidebar({
             )
           })}
         </nav>
-        <ThemeToggle compact />
         <button
           onClick={onLogout}
           disabled={isLoggingOut}
@@ -289,8 +287,6 @@ const ExpandedSidebar = memo(function ExpandedSidebar({
         </nav>
 
         <div className="pt-4 mt-4 border-t border-[var(--ds-border-subtle)]">
-          <ThemeToggle />
-
           <button
             onClick={onLogout}
             disabled={isLoggingOut}
