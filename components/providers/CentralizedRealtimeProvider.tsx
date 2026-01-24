@@ -109,7 +109,7 @@ export function CentralizedRealtimeProvider({
   useEffect(() => {
     const supabase = getSupabaseBrowser()
     if (!supabase) {
-      console.warn('[CentralizedRealtime] Supabase client not available')
+      // Supabase não configurado - normal durante setup wizard ou se env vars ausentes
       return
     }
 
