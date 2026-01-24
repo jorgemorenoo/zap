@@ -13,6 +13,8 @@ import {
   generateKeyPair,
   isValidPrivateKey,
 } from '@/lib/whatsapp/flow-endpoint-crypto'
+import { getWhatsAppCredentials } from '@/lib/whatsapp-credentials'
+import { metaSetEncryptionPublicKey } from '@/lib/meta-flows-api'
 
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
@@ -154,12 +156,44 @@ export async function POST(request: Request) {
     if (shouldStoreEndpointUrl) {
       await settingsDb.set(ENDPOINT_URL_SETTING, endpointUrl)
     }
-    // #region agent log
-    // #endregion agent log
+
+    // Sincroniza automaticamente com a Meta (se credenciais disponíveis)
+    let metaSyncSuccess = false
+    let metaSyncError: string | null = null
+
+    try {
+      const credentials = await getWhatsAppCredentials()
+
+      if (credentials?.accessToken && credentials?.phoneNumberId) {
+        console.log('[flow-endpoint-keys] 🔄 Sincronizando chave pública com a Meta...')
+
+        await metaSetEncryptionPublicKey({
+          accessToken: credentials.accessToken,
+          phoneNumberId: credentials.phoneNumberId,
+          publicKey,
+        })
+
+        metaSyncSuccess = true
+        console.log('[flow-endpoint-keys] ✅ Chave pública sincronizada com a Meta')
+      } else {
+        console.log('[flow-endpoint-keys] ⚠️ Credenciais WhatsApp não configuradas, sincronização com Meta ignorada')
+        metaSyncError = 'Credenciais WhatsApp não configuradas'
+      }
+    } catch (error) {
+      const errorMsg = error instanceof Error ? error.message : String(error)
+      console.error('[flow-endpoint-keys] ❌ Falha ao sincronizar com Meta:', errorMsg)
+      metaSyncError = errorMsg
+    }
 
     return NextResponse.json({
       success: true,
-      message: 'Chaves geradas! O endpoint esta pronto para receber requests de flows dinamicos.',
+      message: metaSyncSuccess
+        ? 'Chaves geradas e sincronizadas com a Meta!'
+        : 'Chaves geradas! Sincronização com Meta pendente.',
+      metaSync: {
+        success: metaSyncSuccess,
+        error: metaSyncError,
+      },
     })
   } catch (error) {
     console.error('[flow-endpoint-keys] POST error:', error)

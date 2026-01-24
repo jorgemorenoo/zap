@@ -153,10 +153,12 @@ export async function metaUpdateFlowMetadata(params: {
   flowId: string
   name?: string
   categories?: string[]
+  endpointUri?: string
 }): Promise<MetaFlowsBasicResult> {
   const body: any = {}
   if (params.name) body.name = params.name
   if (params.categories && params.categories.length > 0) body.categories = params.categories
+  if (params.endpointUri) body.endpoint_uri = params.endpointUri
 
   const res = await fetch(`${GRAPH_BASE}/${encodeURIComponent(params.flowId)}`, {
     method: 'POST',

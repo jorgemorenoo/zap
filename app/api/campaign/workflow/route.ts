@@ -502,21 +502,9 @@ const workflowHandler = serve<CampaignWorkflowInput>(
       : `wf_${campaignId}_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 8)}`
 
 
-    await emitWorkflowTrace({
-      traceId,
-      campaignId,
-      step: 'workflow',
-      phase: 'start',
-      ok: true,
-      extra: {
-        contacts: contacts?.length || 0,
-        hasTemplateSnapshot: Boolean(templateSnapshot),
-        isResend: Boolean((context.requestPayload as any)?.isResend),
-      },
-    })
-
     // HARDENING: workflow é estritamente baseado em contact_id.
     // Se vier algum contato sem contactId, é bug no dispatch/resend e devemos falhar cedo.
+    // NOTA: Esta validação é síncrona e determinística, pode ficar fora de context.run()
     const missingContactIds = (contacts || []).filter((c) => !c.contactId || String(c.contactId).trim().length === 0)
     if (missingContactIds.length > 0) {
       const sample = missingContactIds.slice(0, 10).map((c) => ({ phone: c.phone, name: c.name || '' }))
@@ -525,43 +513,50 @@ const workflowHandler = serve<CampaignWorkflowInput>(
       )
     }
 
-    // Se a campanha foi cancelada antes do workflow iniciar, saímos sem tocar em status.
-    // (Importante para evitar que o init-campaign volte para SENDING.)
-    const existingAtStart = await campaignDb.getById(campaignId)
-    if (existingAtStart?.status === CampaignStatus.CANCELLED) {
+    let shouldStopWorkflow: 'cancelled' | null = null
+
+    // Step 1: Check cancellation and mark campaign as SENDING
+    // IMPORTANTE: Todo código não-determinístico (DB, fetch, etc) DEVE estar dentro de context.run()
+    // Ref: https://upstash.com/docs/workflow/basics/caveats#avoid-non-deterministic-code-outside-context-run
+    await context.run('init-campaign', async () => {
+      // Emit trace de início
       await emitWorkflowTrace({
         traceId,
         campaignId,
         step: 'workflow',
-        phase: 'cancelled_before_start',
+        phase: 'start',
         ok: true,
+        extra: {
+          contacts: contacts?.length || 0,
+          hasTemplateSnapshot: Boolean(templateSnapshot),
+          isResend: Boolean((context.requestPayload as any)?.isResend),
+        },
       })
-      console.log(`🛑 Campaign ${campaignId} already CANCELLED before workflow start. Exiting.`)
-      return
-    }
 
-    let shouldStopWorkflow: 'cancelled' | null = null
-
-    // Step 1: Mark campaign as SENDING in Supabase
-    await context.run('init-campaign', async () => {
       const nowIso = new Date().toISOString()
       const existing = await campaignDb.getById(campaignId)
 
-      // Defesa extra: não sobrescrever cancelamento.
+      // Verifica se campanha foi cancelada antes de iniciar
       if (existing?.status === CampaignStatus.CANCELLED) {
+        await emitWorkflowTrace({
+          traceId,
+          campaignId,
+          step: 'workflow',
+          phase: 'cancelled_before_start',
+          ok: true,
+        })
+        console.log(`🛑 Campaign ${campaignId} already CANCELLED before workflow start. Exiting.`)
         shouldStopWorkflow = 'cancelled'
         return
       }
 
       const startedAt = (existing as any)?.startedAt || nowIso
 
-
       await campaignDb.updateStatus(campaignId, {
         status: CampaignStatus.SENDING,
         startedAt,
         completedAt: null,
       })
-
 
       console.log(`📊 Campaign ${campaignId} started with ${contacts.length} contacts (traceId=${traceId})`)
       console.log(`📝 Template variables: ${JSON.stringify(templateVariables || [])}`)
@@ -572,22 +567,26 @@ const workflowHandler = serve<CampaignWorkflowInput>(
       return
     }
 
-    // Step 2: Process contacts in smaller batches
+    // Step 2: Preparar batches (busca config de throttle)
+    // IMPORTANTE: Chamadas assíncronas devem estar dentro de context.run()
+    const { batches, BATCH_SIZE, cfgForBatching } = await context.run('prepare-batches', async () => {
+      const cfg = await getAdaptiveThrottleConfigWithSource().catch(() => null)
+      const rawBatchSize = Number(cfg?.config?.batchSize ?? process.env.WHATSAPP_WORKFLOW_BATCH_SIZE ?? '10')
+      const batchSize = Number.isFinite(rawBatchSize)
+        ? Math.max(1, Math.min(200, Math.floor(rawBatchSize)))
+        : 10
+
+      const contactBatches: Contact[][] = []
+      for (let i = 0; i < contacts.length; i += batchSize) {
+        contactBatches.push(contacts.slice(i, i + batchSize))
+      }
+
+      console.log(`📦 Prepared ${contactBatches.length} batches of up to ${batchSize} contacts each`)
+      return { batches: contactBatches, BATCH_SIZE: batchSize, cfgForBatching: cfg }
+    })
+
+    // Step 3+: Process contacts in smaller batches
     // Each batch is a separate step = separate HTTP request = bypasses 10s limit
-    // Observação: cada contato faz múltiplas operações (DB + fetch Meta).
-    // Para bater metas agressivas (ex.: “enviar em 1 min”), batch size precisa ser ajustável.
-    // Mantemos um default conservador (10) e permitimos tuning via settings/env.
-    const cfgForBatching = await getAdaptiveThrottleConfigWithSource().catch(() => null)
-    const rawBatchSize = Number(cfgForBatching?.config?.batchSize ?? process.env.WHATSAPP_WORKFLOW_BATCH_SIZE ?? '10')
-    const BATCH_SIZE = Number.isFinite(rawBatchSize)
-      ? Math.max(1, Math.min(200, Math.floor(rawBatchSize)))
-      : 10
-    const batches: Contact[][] = []
-
-    for (let i = 0; i < contacts.length; i += BATCH_SIZE) {
-      batches.push(contacts.slice(i, i + BATCH_SIZE))
-    }
-
     for (let batchIndex = 0; batchIndex < batches.length; batchIndex++) {
       const batch = batches[batchIndex]
 

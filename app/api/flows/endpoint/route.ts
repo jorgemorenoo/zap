@@ -19,11 +19,15 @@ import {
   decryptRequest,
   encryptResponse,
   createErrorResponse,
+  generateKeyPair,
   type FlowDataExchangeRequest,
 } from '@/lib/whatsapp/flow-endpoint-crypto'
 import { handleFlowAction } from '@/lib/whatsapp/flow-endpoint-handlers'
+import { getWhatsAppCredentials } from '@/lib/whatsapp-credentials'
+import { metaSetEncryptionPublicKey } from '@/lib/meta-flows-api'
 
 const PRIVATE_KEY_SETTING = 'whatsapp_flow_private_key'
+const PUBLIC_KEY_SETTING = 'whatsapp_flow_public_key'
 
 export async function POST(request: NextRequest) {
   try {
@@ -37,11 +41,40 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Campos obrigatorios ausentes' }, { status: 400 })
     }
 
-    // Busca a chave privada
-    const privateKey = await settingsDb.get(PRIVATE_KEY_SETTING)
+    // Busca a chave privada (gera automaticamente se não existir)
+    let privateKey = await settingsDb.get(PRIVATE_KEY_SETTING)
+
     if (!privateKey) {
-      console.error('[flow-endpoint] ❌ Chave privada nao configurada')
-      return NextResponse.json({ error: 'Endpoint nao configurado' }, { status: 500 })
+      console.log('[flow-endpoint] 🔑 Chave privada não encontrada, gerando automaticamente...')
+
+      const { publicKey, privateKey: newPrivateKey } = generateKeyPair()
+
+      // Salva as chaves
+      await Promise.all([
+        settingsDb.set(PRIVATE_KEY_SETTING, newPrivateKey),
+        settingsDb.set(PUBLIC_KEY_SETTING, publicKey),
+      ])
+
+      privateKey = newPrivateKey
+
+      console.log('[flow-endpoint] ✅ Chaves RSA geradas e salvas automaticamente')
+
+      // Tenta sincronizar com a Meta automaticamente
+      try {
+        const credentials = await getWhatsAppCredentials()
+        if (credentials?.accessToken && credentials?.phoneNumberId) {
+          await metaSetEncryptionPublicKey({
+            accessToken: credentials.accessToken,
+            phoneNumberId: credentials.phoneNumberId,
+            publicKey,
+          })
+          console.log('[flow-endpoint] ✅ Chave pública sincronizada com a Meta automaticamente')
+        } else {
+          console.log('[flow-endpoint] ⚠️ Credenciais WhatsApp não configuradas, sincronização pendente')
+        }
+      } catch (syncError) {
+        console.error('[flow-endpoint] ⚠️ Falha ao sincronizar com Meta (não-bloqueante):', syncError)
+      }
     }
 
     // Descriptografa a request
@@ -52,8 +85,32 @@ export async function POST(request: NextRequest) {
         privateKey
       )
     } catch (error) {
+      const errorMessage = error instanceof Error ? error.message : String(error)
+      const isOaepError = errorMessage.includes('oaep') || errorMessage.includes('OAEP')
+
       console.error('[flow-endpoint] ❌ Erro ao descriptografar:', error)
-      return NextResponse.json({ error: 'Falha na descriptografia' }, { status: 421 })
+
+      if (isOaepError) {
+        console.error('[flow-endpoint] 🔑 OAEP Error detectado!')
+        console.error('[flow-endpoint] 💡 Isso geralmente significa que a chave pública configurada no Flow da Meta')
+        console.error('[flow-endpoint]    não corresponde à chave privada armazenada no SmartZap.')
+        console.error('[flow-endpoint] 🛠️  Para resolver:')
+        console.error('[flow-endpoint]    1. Acesse /api/flows/endpoint/keys (GET) para obter a chave pública atual')
+        console.error('[flow-endpoint]    2. Atualize a chave pública na configuração do Flow no Meta Business Manager')
+        console.error('[flow-endpoint]    OU')
+        console.error('[flow-endpoint]    1. Acesse /api/flows/endpoint/keys (POST) para gerar novas chaves')
+        console.error('[flow-endpoint]    2. Use a nova chave pública para reconfigurar o Flow na Meta')
+      }
+
+      return NextResponse.json(
+        {
+          error: 'Falha na descriptografia',
+          hint: isOaepError
+            ? 'Chave pública no Flow da Meta não corresponde à chave privada do servidor. Verifique a configuração das chaves.'
+            : undefined
+        },
+        { status: 421 }
+      )
     }
 
     const flowRequest = decrypted.decryptedBody as unknown as FlowDataExchangeRequest
