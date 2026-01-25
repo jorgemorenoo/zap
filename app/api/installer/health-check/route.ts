@@ -52,6 +52,7 @@ async function checkDatabaseHealth(dbUrl: string): Promise<{
   hasSettings: boolean;
 }> {
   const normalizedDbUrl = stripSslModeParam(dbUrl);
+  const shouldWaitStorage = process.env.SMARTZAP_WAIT_STORAGE === 'true';
 
   // NÃO resolver para IPv4 - o SSL precisa do hostname original para SNI
   const client = new Client({
@@ -62,9 +63,14 @@ async function checkDatabaseHealth(dbUrl: string): Promise<{
   try {
     await client.connect();
 
-    // SmartZap NÃO usa Supabase Storage, então sempre retornamos true
-    // (evita erro de permissão no schema storage com CLI login role)
-    const storageReady = true;
+    // SmartZap não depende de Storage por padrão. Só valida quando explicitamente solicitado.
+    let storageReady = !shouldWaitStorage;
+    if (shouldWaitStorage) {
+      const storageResult = await client.query<{ ready: boolean }>(
+        `SELECT (to_regclass('storage.buckets') IS NOT NULL) as ready`
+      );
+      storageReady = Boolean(storageResult?.rows?.[0]?.ready);
+    }
 
     // Verifica se a tabela settings existe (indica schema aplicado)
     const schemaResult = await client.query<{ ready: boolean }>(

@@ -357,7 +357,6 @@ export async function POST(req: Request) {
     let anonKey = '';
     let serviceRoleKey = '';
     let dbUrl = '';
-    let fallbackDbUrl = '';
 
     try {
       // Step 1: Validate Vercel token
@@ -482,9 +481,7 @@ export async function POST(req: Request) {
 
         if (poolerResult.ok) {
           dbUrl = poolerResult.dbUrl;
-          fallbackDbUrl = buildDirectDbUrl(supabaseProject.projectRef, supabaseProject.dbPass);
           console.log('[provision] ✅ Step 5/12: DB URL pooler resolvida', { host: poolerResult.host });
-          console.log('[provision] ✅ Step 5/12: DB URL direta pronta (fallback)', { host: `db.${supabaseProject.projectRef}.supabase.co` });
         } else {
           console.warn('[provision] ⚠️ Step 5/12: Pooler indisponível - usando conexão direta');
           dbUrl = buildDirectDbUrl(supabaseProject.projectRef, supabaseProject.dbPass);
@@ -504,7 +501,7 @@ export async function POST(req: Request) {
         }
       }
 
-      console.log('[provision] ✅ Step 5/12: Resolve Supabase Keys - COMPLETO', { hasDbUrl: !!dbUrl, hasFallback: !!fallbackDbUrl });
+      console.log('[provision] ✅ Step 5/12: Resolve Supabase Keys - COMPLETO', { hasDbUrl: !!dbUrl });
       stepIndex++;
 
       // Step 6: Validate QStash
@@ -598,34 +595,15 @@ export async function POST(req: Request) {
 
       if (dbUrl) {
         console.log('[provision] 📍 Step 9/12: Checking if schema exists...');
-        let activeDbUrl = dbUrl;
-        let schemaExists = await checkSchemaApplied(activeDbUrl);
+        const schemaExists = await checkSchemaApplied(dbUrl);
         console.log('[provision] 📍 Step 9/12: schemaExists =', schemaExists);
         if (!schemaExists) {
           console.log('[provision] 📍 Step 9/12: Running migrations...');
-          try {
-            await runSchemaMigration(activeDbUrl);
-            console.log('[provision] ✅ Step 9/12: Migrations completed, waiting 5s for schema cache...');
-            // Wait for schema cache to update
-            await new Promise((r) => setTimeout(r, 5000));
-            console.log('[provision] ✅ Step 9/12: Schema cache wait complete');
-          } catch (err) {
-            if (fallbackDbUrl && fallbackDbUrl !== activeDbUrl && isDbConnectionError(err)) {
-              console.warn('[provision] ⚠️ Step 9/12: Primary DB falhou, tentando fallback pooler...');
-              activeDbUrl = fallbackDbUrl;
-              schemaExists = await checkSchemaApplied(activeDbUrl);
-              if (!schemaExists) {
-                await runSchemaMigration(activeDbUrl);
-                console.log('[provision] ✅ Step 9/12: Migrations completed via fallback, waiting 5s for schema cache...');
-                await new Promise((r) => setTimeout(r, 5000));
-                console.log('[provision] ✅ Step 9/12: Schema cache wait complete (fallback)');
-              } else {
-                console.log('[provision] ℹ️ Step 9/12: Schema already exists on fallback, skipping migrations');
-              }
-            } else {
-              throw err;
-            }
-          }
+          await runSchemaMigration(dbUrl);
+          console.log('[provision] ✅ Step 9/12: Migrations completed, waiting 5s for schema cache...');
+          // Wait for schema cache to update
+          await new Promise((r) => setTimeout(r, 5000));
+          console.log('[provision] ✅ Step 9/12: Schema cache wait complete');
         } else {
           console.log('[provision] ℹ️ Step 9/12: Schema already exists, skipping migrations');
         }
@@ -674,7 +652,23 @@ export async function POST(req: Request) {
       );
 
       console.log('[provision] 📍 Step 11/12: Triggering redeploy...');
-      const redeploy = await triggerProjectRedeploy(vercel.token, vercelProject.projectId, vercelProject.teamId);
+      let redeploy: { deploymentId?: string };
+      try {
+        redeploy = await triggerProjectRedeploy(vercel.token, vercelProject.projectId, vercelProject.teamId);
+      } catch (err) {
+        try {
+          console.warn('[provision] ⚠️ Redeploy falhou, reabilitando installer...');
+          await upsertProjectEnvs(
+            vercel.token,
+            vercelProject.projectId,
+            [{ key: 'INSTALLER_ENABLED', value: 'true', targets: ['production', 'preview'] }],
+            vercelProject.teamId
+          );
+        } catch (rollbackErr) {
+          console.error('[provision] ❌ Falha ao reabilitar installer após erro no redeploy:', rollbackErr);
+        }
+        throw err;
+      }
       console.log('[provision] ✅ Step 11/12: Redeploy triggered', { deploymentId: redeploy.deploymentId });
       stepIndex++;
 

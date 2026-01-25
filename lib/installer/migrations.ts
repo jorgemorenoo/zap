@@ -68,6 +68,10 @@ async function waitForStorageReady(client: Client, opts?: { timeoutMs?: number; 
   );
 }
 
+function shouldWaitForStorage(): boolean {
+  return process.env.SMARTZAP_WAIT_STORAGE === 'true';
+}
+
 /**
  * Conecta com retry/backoff, recriando o Client a cada tentativa.
  * Isso evita o erro: "Client has already been connected. You cannot reuse a client."
@@ -167,11 +171,15 @@ export async function runSchemaMigration(dbUrl: string) {
   console.log('[migrations] Conexão estabelecida com sucesso!');
 
   try {
-    // Aguarda storage.buckets existir (igual ao CRM)
-    // O Supabase demora alguns segundos para habilitar storage após criar o projeto
-    console.log('[migrations] Aguardando storage ficar pronto...');
-    await waitForStorageReady(client);
-    console.log('[migrations] Storage pronto, iniciando migrations...');
+    if (shouldWaitForStorage()) {
+      // Aguarda storage.buckets existir (igual ao CRM)
+      // O Supabase demora alguns segundos para habilitar storage após criar o projeto
+      console.log('[migrations] Aguardando storage ficar pronto...');
+      await waitForStorageReady(client);
+      console.log('[migrations] Storage pronto, iniciando migrations...');
+    } else {
+      console.log('[migrations] Storage não é necessário, iniciando migrations...');
+    }
 
     // Executa todos os arquivos de migration em ordem.
     for (const file of migrationFiles) {
