@@ -634,7 +634,7 @@ export function DashboardShell({
 
                     {/* Onboarding Checklist LEGADO - mantido para transição */}
                     {/* Mostra se: onboarding completo (banco OU localStorage) E não dismissado E não minimizado E novo checklist não ativo */}
-                    {pathname === '/' && !isOnboardingCompletedInDb && (shouldShowChecklist) && !onboardingProgress.isChecklistMinimized && !onboardingProgress.isChecklistDismissed && healthStatus && (
+                    {pathname === '/' && !isOnboardingCompletedInDb && !isOnboardingStatusLoading && (shouldShowChecklist) && !onboardingProgress.isChecklistMinimized && !onboardingProgress.isChecklistDismissed && healthStatus && (
                         <div className="mb-6">
                             <OnboardingChecklist
                                 healthStatus={healthStatus}

@@ -34,7 +34,7 @@ export const getDashboardData = cache(async (): Promise<{
     // Todas campanhas para chart (últimos 30 dias)
     supabase
       .from('campaigns')
-      .select('sent, delivered, read, failed, status, created_at, started_at, last_sent_at, recipients')
+      .select('sent, delivered, read, failed, status, created_at, started_at, last_sent_at, total_recipients')
       .gte('created_at', new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString())
   ])
 
@@ -107,7 +107,7 @@ function generateChartData(campaigns: any[]): ChartDataPoint[] {
     const entry = bucket.get(key)
     if (!entry) return
 
-    entry.sent += campaign.sent || campaign.recipients || 0
+    entry.sent += campaign.sent || campaign.total_recipients || 0
     entry.read += campaign.read || 0
     entry.delivered += campaign.delivered || 0
     entry.failed += campaign.failed || 0
@@ -140,7 +140,7 @@ function mapCampaignFromDb(dbCampaign: any): Campaign {
     name: dbCampaign.name,
     templateName: dbCampaign.template_name || '',
     status: dbCampaign.status,
-    recipients: dbCampaign.recipients || 0,
+    recipients: dbCampaign.total_recipients || 0,
     sent: dbCampaign.sent || 0,
     delivered: dbCampaign.delivered || 0,
     read: dbCampaign.read || 0,

@@ -1,4 +1,15 @@
 import type { NextConfig } from 'next'
+import { config as loadEnv } from 'dotenv'
+import { existsSync } from 'node:fs'
+import { resolve } from 'node:path'
+
+// Carrega .env.vercel.local no dev (Vercel CLI não lê este arquivo automaticamente)
+if (process.env.NODE_ENV !== 'production') {
+  const vercelEnvPath = resolve(process.cwd(), '.env.vercel.local')
+  if (existsSync(vercelEnvPath)) {
+    loadEnv({ path: vercelEnvPath })
+  }
+}
 
 const isProd = process.env.NODE_ENV === 'production'
 
