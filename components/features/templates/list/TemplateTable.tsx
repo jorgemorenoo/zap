@@ -31,6 +31,8 @@ export interface TemplateTableProps {
   onViewDetails: (template: Template) => void;
   onDeleteClick: (template: Template) => void;
   onCreateCampaign?: (template: Template) => void;
+  onCloneTemplate?: (template: Template) => void;
+  cloningTemplateName?: string | null;
   // Hover
   onHoverTemplate: (templateId: string | null) => void;
   onPrefetchPreview?: (template: Template) => void;
@@ -60,6 +62,8 @@ export const TemplateTable: React.FC<TemplateTableProps> = ({
   onViewDetails,
   onDeleteClick,
   onCreateCampaign,
+  onCloneTemplate,
+  cloningTemplateName,
   onHoverTemplate,
   onPrefetchPreview,
   onToggleAllDrafts,
@@ -188,6 +192,7 @@ export const TemplateTable: React.FC<TemplateTableProps> = ({
                     isRowSelected={isRowSelected}
                     isSubmitting={submittingManualDraftId === template.id}
                     isDeletingDraft={deletingManualDraftId === template.id}
+                    isCloning={cloningTemplateName === template.name}
                     canSend={canSendDraft(template)}
                     sendReason={manualDraftSendStateById?.[template.id]?.reason}
                     onToggleSelection={() =>
@@ -198,6 +203,7 @@ export const TemplateTable: React.FC<TemplateTableProps> = ({
                     onSubmitDraft={() => submitManualDraft(template.id)}
                     onDeleteDraft={() => deleteManualDraft(template.id)}
                     onCreateCampaign={onCreateCampaign ? () => onCreateCampaign(template) : undefined}
+                    onCloneTemplate={onCloneTemplate ? () => onCloneTemplate(template) : undefined}
                     onMouseEnter={() => onHoverTemplate(template.id)}
                     onMouseLeave={() => onHoverTemplate(null)}
                     onPrefetchPreview={onPrefetchPreview ? () => onPrefetchPreview(template) : undefined}

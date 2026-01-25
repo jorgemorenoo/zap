@@ -295,9 +295,10 @@ export const useTemplatesController = () => {
     }
   }
 
-  // --- Manual draft actions (create / submit / delete) ---
+  // --- Manual draft actions (create / submit / delete / clone) ---
   const [submittingManualDraftId, setSubmittingManualDraftId] = useState<string | null>(null)
   const [deletingManualDraftId, setDeletingManualDraftId] = useState<string | null>(null)
+  const [cloningTemplateName, setCloningTemplateName] = useState<string | null>(null)
 
   const createManualDraftMutation = useMutation({
     mutationFn: manualDraftsService.create,
@@ -366,7 +367,7 @@ export const useTemplatesController = () => {
       let deleted = 0
       for (const id of ids) {
         try {
-          // Sequencial para evitar “rajadas” no backend.
+          // Sequencial para evitar "rajadas" no backend.
           await manualDraftsService.remove(id)
           deleted += 1
         } catch (e) {
@@ -383,7 +384,7 @@ export const useTemplatesController = () => {
       queryClient.invalidateQueries({ queryKey: ['templates'] })
 
       if (result.deleted > 0) {
-        toast.success(`${result.deleted} rascunho(s) excluído(s)`) 
+        toast.success(`${result.deleted} rascunho(s) excluído(s)`)
       }
       if (result.failed > 0) {
         // Mostra só as primeiras para não spammar.
@@ -391,7 +392,7 @@ export const useTemplatesController = () => {
           toast.error(`${err.id}: ${err.error}`)
         }
         if (result.errors.length > 3) {
-          toast.error(`+${result.errors.length - 3} erro(s) ao excluir rascunhos`) 
+          toast.error(`+${result.errors.length - 3} erro(s) ao excluir rascunhos`)
         }
       }
 
@@ -400,6 +401,26 @@ export const useTemplatesController = () => {
     },
     onError: (error: Error) => {
       toast.error(error.message || 'Erro ao excluir rascunhos')
+    },
+  })
+
+  const cloneTemplateMutation = useMutation({
+    mutationFn: async (templateName: string) => manualDraftsService.clone(templateName),
+    onMutate: (name) => {
+      setCloningTemplateName(name)
+    },
+    onSuccess: (result) => {
+      queryClient.invalidateQueries({ queryKey: ['templates', 'drafts', 'manual'] })
+      queryClient.invalidateQueries({ queryKey: ['templates'] })
+      toast.success(`Template clonado como "${result.name}"`)
+      // Retorna o ID para o caller poder redirecionar
+      return result
+    },
+    onError: (error: Error) => {
+      toast.error(error.message || 'Erro ao clonar template')
+    },
+    onSettled: () => {
+      setCloningTemplateName(null)
     },
   })
 
@@ -683,6 +704,10 @@ export const useTemplatesController = () => {
     submittingManualDraftId,
     deleteManualDraft: (id: string) => deleteManualDraftMutation.mutate(id),
     deletingManualDraftId,
+    cloneTemplate: async (templateName: string) => {
+      return await cloneTemplateMutation.mutateAsync(templateName)
+    },
+    cloningTemplateName,
 
     // Bulk Utility Generator Props
     isBulkModalOpen,

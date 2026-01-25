@@ -95,6 +95,10 @@ export interface TemplateListViewProps {
   // Create Campaign from template
   onCreateCampaign?: (template: Template) => void;
 
+  // Clone template to draft
+  onCloneTemplate?: (template: Template) => void;
+  cloningTemplateName?: string | null;
+
   // Multi-select & Bulk Delete
   selectedMetaTemplates: Set<string>;
   onToggleMetaTemplate: (name: string) => void;

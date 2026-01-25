@@ -114,4 +114,16 @@ export const manualDraftsService = {
     }
     return await res.json()
   },
+
+  async clone(templateName: string): Promise<{ id: string; name: string; originalName: string }> {
+    const res = await fetch(`/api/templates/${encodeURIComponent(templateName)}/clone`, {
+      method: 'POST',
+      credentials: 'include',
+    })
+    if (!res.ok) {
+      const data = await res.json().catch(() => ({}))
+      throw new Error(data?.error || 'Falha ao clonar template')
+    }
+    return await res.json()
+  },
 }

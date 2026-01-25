@@ -380,6 +380,16 @@ export default function TemplatesPage() {
           onCreateCampaign={(template) => {
             router.push(`/campaigns/new?templateName=${encodeURIComponent(template.name)}`)
           }}
+          onCloneTemplate={async (template) => {
+            try {
+              const result = await controller.cloneTemplate(template.name)
+              if (result?.id) {
+                router.push(`/templates/drafts/${encodeURIComponent(result.id)}`)
+              }
+            } catch {
+              // Toast já é emitido pelo controller
+            }
+          }}
         />
       </div>
 

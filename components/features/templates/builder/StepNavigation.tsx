@@ -13,6 +13,8 @@ interface StepNavigationProps {
   isButtonsValid: boolean
   onFinish?: () => void
   isFinishing?: boolean
+  onSaveDraft?: () => void
+  isSaving?: boolean
   showDebug: boolean
   setShowDebug: React.Dispatch<React.SetStateAction<boolean>>
   // Validation states for messages
@@ -45,6 +47,8 @@ export function StepNavigation({
   isButtonsValid,
   onFinish,
   isFinishing,
+  onSaveDraft,
+  isSaving,
   showDebug,
   setShowDebug,
   isHeaderFormatValid,
@@ -120,35 +124,57 @@ export function StepNavigation({
                       : 'Revise as regras do template'
           )}
         </div>
-        <button
-          type="button"
-          onClick={() => {
-            if (!canContinue || isFinishing) return
-            if (step < 3) {
-              setStep((prev) => Math.min(3, prev + 1))
-              return
-            }
-            // Ultimo passo: delega a acao ao pai (ex.: salvar + enviar)
-            onFinish?.()
-          }}
-          disabled={!canContinue || !!isFinishing}
-          className={`rounded-full px-5 py-2 text-sm font-semibold transition ${
-            !isFinishing && canContinue
-              ? 'bg-primary-600 text-white dark:bg-white dark:text-black hover:bg-primary-500 dark:hover:bg-gray-200'
-              : 'cursor-not-allowed border border-[var(--ds-border-default)] bg-[var(--ds-bg-elevated)] text-[var(--ds-text-muted)]'
-          }`}
-        >
-          {step < 3 ? (
-            'Continuar'
-          ) : isFinishing ? (
-            <span className="inline-flex items-center gap-2">
-              <Loader2 className="h-4 w-4 animate-spin" />
-              Enviando pra Meta...
-            </span>
-          ) : (
-            (onFinish ? 'Enviar pra Meta' : 'Fim')
+        <div className="flex items-center gap-2">
+          {/* Botao Salvar Rascunho */}
+          {onSaveDraft && (
+            <button
+              type="button"
+              onClick={onSaveDraft}
+              disabled={isSaving || isFinishing}
+              className="rounded-full px-4 py-2 text-sm font-medium border border-[var(--ds-border-default)] bg-[var(--ds-bg-elevated)] text-[var(--ds-text-secondary)] hover:text-[var(--ds-text-primary)] hover:bg-[var(--ds-bg-hover)] transition disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+              {isSaving ? (
+                <span className="inline-flex items-center gap-2">
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                  Salvando...
+                </span>
+              ) : (
+                'Salvar Rascunho'
+              )}
+            </button>
           )}
-        </button>
+
+          {/* Botao Continuar/Enviar */}
+          <button
+            type="button"
+            onClick={() => {
+              if (!canContinue || isFinishing) return
+              if (step < 3) {
+                setStep((prev) => Math.min(3, prev + 1))
+                return
+              }
+              // Ultimo passo: delega a acao ao pai (ex.: salvar + enviar)
+              onFinish?.()
+            }}
+            disabled={!canContinue || !!isFinishing}
+            className={`rounded-full px-5 py-2 text-sm font-semibold transition ${
+              !isFinishing && canContinue
+                ? 'bg-primary-600 text-white dark:bg-white dark:text-black hover:bg-primary-500 dark:hover:bg-gray-200'
+                : 'cursor-not-allowed border border-[var(--ds-border-default)] bg-[var(--ds-bg-elevated)] text-[var(--ds-text-muted)]'
+            }`}
+          >
+            {step < 3 ? (
+              'Continuar'
+            ) : isFinishing ? (
+              <span className="inline-flex items-center gap-2">
+                <Loader2 className="h-4 w-4 animate-spin" />
+                Enviando pra Meta...
+              </span>
+            ) : (
+              (onFinish ? 'Enviar pra Meta' : 'Fim')
+            )}
+          </button>
+        </div>
       </div>
     </Container>
   )

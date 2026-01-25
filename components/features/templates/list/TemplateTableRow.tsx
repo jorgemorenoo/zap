@@ -2,7 +2,7 @@
 
 import React from 'react';
 import Link from 'next/link';
-import { FileText, Check, Loader2, Trash2, Eye, Pencil, Send, Megaphone } from 'lucide-react';
+import { FileText, Check, Loader2, Trash2, Eye, Pencil, Send, Megaphone, Copy } from 'lucide-react';
 import { Template } from '../../../../types';
 import { StatusBadge } from './StatusBadge';
 import { Button } from '@/components/ui/button';
@@ -13,6 +13,7 @@ export interface TemplateTableRowProps {
   isRowSelected: boolean;
   isSubmitting: boolean;
   isDeletingDraft: boolean;
+  isCloning?: boolean;
   canSend: boolean;
   sendReason?: string;
   // Selection handlers
@@ -23,6 +24,7 @@ export interface TemplateTableRowProps {
   onSubmitDraft: () => void;
   onDeleteDraft: () => void;
   onCreateCampaign?: () => void;
+  onCloneTemplate?: () => void;
   // Hover handlers
   onMouseEnter: () => void;
   onMouseLeave: () => void;
@@ -35,6 +37,7 @@ const TemplateTableRowComponent: React.FC<TemplateTableRowProps> = ({
   isRowSelected,
   isSubmitting,
   isDeletingDraft,
+  isCloning,
   canSend,
   sendReason,
   onToggleSelection,
@@ -43,6 +46,7 @@ const TemplateTableRowComponent: React.FC<TemplateTableRowProps> = ({
   onSubmitDraft,
   onDeleteDraft,
   onCreateCampaign,
+  onCloneTemplate,
   onMouseEnter,
   onMouseLeave,
   onPrefetchPreview,
@@ -239,6 +243,21 @@ const TemplateTableRowComponent: React.FC<TemplateTableRowProps> = ({
               >
                 <Eye size={16} />
               </Button>
+              {onCloneTemplate && (
+                <Button
+                  variant="ghost"
+                  size="icon-sm"
+                  onClick={onCloneTemplate}
+                  disabled={isCloning}
+                  title="Clonar como rascunho"
+                >
+                  {isCloning ? (
+                    <Loader2 size={16} className="animate-spin" />
+                  ) : (
+                    <Copy size={16} />
+                  )}
+                </Button>
+              )}
               {template.status === 'APPROVED' && onCreateCampaign && (
                 <Button
                   variant="ghost"
@@ -280,6 +299,7 @@ export const TemplateTableRow = React.memo(TemplateTableRowComponent, (prev, nex
   if (prev.isRowSelected !== next.isRowSelected) return false;
   if (prev.isSubmitting !== next.isSubmitting) return false;
   if (prev.isDeletingDraft !== next.isDeletingDraft) return false;
+  if (prev.isCloning !== next.isCloning) return false;
   if (prev.canSend !== next.canSend) return false;
   if (prev.sendReason !== next.sendReason) return false;
 

@@ -106,6 +106,8 @@ export const TemplateListView: React.FC<TemplateListViewProps> = ({
   onConfirmBulkDeleteDrafts,
   hideHeader = false,
   onCreateCampaign,
+  onCloneTemplate,
+  cloningTemplateName,
 }) => {
   const [hoveredTemplateId, setHoveredTemplateId] = React.useState<string | null>(null);
   const previewVariables = ['Joao', '19:00', '01/12', 'R$ 99,90', '#12345'];
@@ -234,6 +236,8 @@ export const TemplateListView: React.FC<TemplateListViewProps> = ({
         onViewDetails={onViewDetails}
         onDeleteClick={onDeleteClick}
         onCreateCampaign={onCreateCampaign}
+        onCloneTemplate={onCloneTemplate}
+        cloningTemplateName={cloningTemplateName}
         onHoverTemplate={setHoveredTemplateId}
         onPrefetchPreview={onPrefetchPreview}
         onToggleAllDrafts={toggleAllVisibleDrafts}

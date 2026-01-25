@@ -54,12 +54,16 @@ export function ManualTemplateBuilder({
   onSpecChange,
   onFinish,
   isFinishing,
+  onSaveDraft,
+  isSaving,
 }: {
   id: string
   initialSpec: unknown
   onSpecChange: (spec: unknown) => void
   onFinish?: () => void
   isFinishing?: boolean
+  onSaveDraft?: () => void
+  isSaving?: boolean
 }) {
   // ============================================================================
   // State
@@ -723,6 +727,8 @@ export function ManualTemplateBuilder({
           isButtonsValid={isButtonsValid}
           onFinish={onFinish}
           isFinishing={isFinishing}
+          onSaveDraft={onSaveDraft}
+          isSaving={isSaving}
           showDebug={showDebug}
           setShowDebug={setShowDebug}
           isHeaderFormatValid={isHeaderFormatValid}

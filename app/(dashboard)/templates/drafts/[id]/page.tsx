@@ -93,6 +93,15 @@ export default function ManualDraftEditorPage({
     }
   })()
 
+  const handleSaveDraft = async () => {
+    const spec = getCurrentSpec()
+    if (!spec) {
+      toast.error('Nada para salvar')
+      return
+    }
+    await updateMutation.mutateAsync(spec)
+  }
+
   const handleSend = async () => {
     if (!validation.canSend) {
       const message = validation.issues.length ? validation.issues.join('\n') : 'Revise o template antes de enviar'
@@ -170,6 +179,10 @@ export default function ManualDraftEditorPage({
             void handleSend()
           }}
           isFinishing={updateMutation.isPending || submitMutation.isPending}
+          onSaveDraft={() => {
+            void handleSaveDraft()
+          }}
+          isSaving={updateMutation.isPending}
         />
       )}
       </div>
