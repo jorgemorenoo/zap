@@ -2,7 +2,8 @@
 
 import React from 'react';
 import { Search, RefreshCw, Copy, Trash2, Calendar, Play, Pause, Loader2 } from 'lucide-react';
-import { Campaign, CampaignStatus } from '../../../types';
+import { Campaign, CampaignStatus } from '../../../types'
+import { formatDateFull, formatDateTimeFull } from '@/lib/date-formatter';
 import { Page, PageDescription, PageHeader, PageTitle } from '@/components/ui/page';
 import { Container } from '@/components/ui/container';
 import { StatusBadge as DsStatusBadge } from '@/components/ui/status-badge';
@@ -170,10 +171,7 @@ const CampaignTableRow = React.memo(
           {campaign.scheduledAt && campaign.status === CampaignStatus.SCHEDULED && (
             <p className="text-xs text-purple-400 mt-1 flex items-center gap-1">
               <Calendar size={10} />
-              {new Date(campaign.scheduledAt).toLocaleString('pt-BR', {
-                dateStyle: 'short',
-                timeStyle: 'short'
-              })}
+              {formatDateTimeFull(campaign.scheduledAt)}
             </p>
           )}
         </td>
@@ -199,14 +197,14 @@ const CampaignTableRow = React.memo(
           <span
             className="text-xs"
             title={(campaign.firstDispatchAt || campaign.startedAt) && campaign.lastSentAt
-              ? `De ${new Date(campaign.firstDispatchAt || campaign.startedAt!).toLocaleString('pt-BR')} até ${new Date(campaign.lastSentAt).toLocaleString('pt-BR')}`
+              ? `De ${formatDateTimeFull(campaign.firstDispatchAt || campaign.startedAt!)} até ${formatDateTimeFull(campaign.lastSentAt)}`
               : 'Duração do disparo'}
           >
             {calcSendDuration(campaign)}
           </span>
         </td>
         <td className="px-6 py-4 text-[var(--ds-text-muted)] font-mono text-xs">
-          {new Date(campaign.createdAt).toLocaleDateString('pt-BR')}
+          {formatDateFull(campaign.createdAt)}
         </td>
         <td className="px-6 py-4 text-right">
           <div className="flex items-center justify-end gap-2">

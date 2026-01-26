@@ -64,13 +64,18 @@ describe('whatsapp-pricing', () => {
       });
     });
 
-    describe('UTILIDADE category (Portuguese alias)', () => {
-      // NOTE: UTILIDADE is defined in TemplateCategory type but normalizeCategory
-      // does not handle it - it falls back to MARKETING. This may be a bug in the
-      // source code. These tests document current behavior.
-      it('should fall back to MARKETING (current behavior)', () => {
-        // This is likely unintended behavior - UTILIDADE should map to utility pricing
-        expect(calculateEffectivePrice('UTILIDADE', 0)).toBe(0.0825);
+    describe('UTILIDADE category (Portuguese canonical form)', () => {
+      // UTILIDADE is the canonical form used throughout the app after canonicalTemplateCategory()
+      // It should correctly map to utility pricing
+      it('should use utility pricing (R$ 0.0068 base)', () => {
+        expect(calculateEffectivePrice('UTILIDADE', 0)).toBe(0.0068);
+        expect(calculateEffectivePrice('UTILIDADE', 1000)).toBe(0.0068);
+        expect(calculateEffectivePrice('UTILIDADE', 10000)).toBe(0.0068);
+      });
+
+      it('should apply 5% discount for volume 10001-100000', () => {
+        const expectedPrice = 0.0068 * 0.95;
+        expect(calculateEffectivePrice('UTILIDADE', 50000)).toBeCloseTo(expectedPrice);
       });
     });
 
@@ -92,13 +97,17 @@ describe('whatsapp-pricing', () => {
       });
     });
 
-    describe('AUTENTICACAO category (Portuguese alias)', () => {
-      // NOTE: AUTENTICACAO is defined in TemplateCategory type but normalizeCategory
-      // does not handle it - it falls back to MARKETING. This may be a bug in the
-      // source code. These tests document current behavior.
-      it('should fall back to MARKETING (current behavior)', () => {
-        // This is likely unintended behavior - AUTENTICACAO should map to auth pricing
-        expect(calculateEffectivePrice('AUTENTICACAO', 0)).toBe(0.0825);
+    describe('AUTENTICACAO category (Portuguese canonical form)', () => {
+      // AUTENTICACAO is the canonical form used throughout the app after canonicalTemplateCategory()
+      // It should correctly map to authentication pricing (same as utility)
+      it('should use authentication pricing (R$ 0.0068 base)', () => {
+        expect(calculateEffectivePrice('AUTENTICACAO', 0)).toBe(0.0068);
+        expect(calculateEffectivePrice('AUTENTICACAO', 5000)).toBe(0.0068);
+      });
+
+      it('should apply 5% discount for volume 10001-100000', () => {
+        const expectedPrice = 0.0068 * 0.95;
+        expect(calculateEffectivePrice('AUTENTICACAO', 50000)).toBeCloseTo(expectedPrice);
       });
     });
 
@@ -286,14 +295,15 @@ describe('whatsapp-pricing', () => {
         expect(breakdown.totalBRLFormatted).toBe('R$\u00a00,00');
       });
 
-      it('should handle Portuguese category aliases (current behavior - falls back to MARKETING)', () => {
-        // NOTE: These categories fall back to MARKETING due to normalization logic
+      it('should handle Portuguese category aliases (canonical form)', () => {
+        // UTILIDADE and AUTENTICACAO are the canonical Portuguese forms
+        // used throughout the app after canonicalTemplateCategory()
         const utilidadeBreakdown = getPricingBreakdown('UTILIDADE', 100);
         const autenticacaoBreakdown = getPricingBreakdown('AUTENTICACAO', 100);
 
-        // Both fall back to MARKETING pricing (likely unintended behavior)
-        expect(utilidadeBreakdown.pricePerMessageUSD).toBe(0.0825);
-        expect(autenticacaoBreakdown.pricePerMessageUSD).toBe(0.0825);
+        // Both should use utility/auth pricing (R$ 0.0068 base)
+        expect(utilidadeBreakdown.pricePerMessageUSD).toBe(0.0068);
+        expect(autenticacaoBreakdown.pricePerMessageUSD).toBe(0.0068);
       });
 
       it('should handle very large campaigns', () => {

@@ -10,6 +10,25 @@ import { getSupabaseBrowser } from './supabase'
 import type { RealtimeTable, RealtimeEventType, RealtimePayload, ChannelStatus } from '@/types'
 
 // ============================================================================
+// CONFIGURATION
+// ============================================================================
+
+const REALTIME_CONFIG = {
+    /** Max retries before giving up */
+    maxRetries: 3,
+    /** Base delay for exponential backoff (ms) */
+    baseDelayMs: 1000,
+    /** Timeout for connection (ms) */
+    timeoutMs: 10000,
+    /** Whether to log debug info */
+    debug: process.env.NODE_ENV === 'development',
+}
+
+// Track connection state globally to avoid spamming logs
+let connectionFailureLogged = false
+let lastConnectionAttempt = 0
+
+// ============================================================================
 // CHANNEL MANAGER
 // ============================================================================
 
@@ -21,7 +40,13 @@ import type { RealtimeTable, RealtimeEventType, RealtimePayload, ChannelStatus }
  */
 export function createRealtimeChannel(channelName: string): RealtimeChannel | null {
     const supabase = getSupabaseBrowser()
-    if (!supabase) return null
+    if (!supabase) {
+        if (!connectionFailureLogged) {
+            console.warn('[Realtime] Supabase not configured - realtime features disabled')
+            connectionFailureLogged = true
+        }
+        return null
+    }
     return supabase.channel(channelName)
 }
 
@@ -57,26 +82,62 @@ export function subscribeToTable<T extends Record<string, unknown> = Record<stri
 }
 
 /**
- * Activates channel subscription
+ * Activates channel subscription with retry logic
  * 
  * @param channel - The channel to activate
  * @param onStatusChange - Optional callback for status changes
+ * @param options - Optional configuration for retries
  * @returns Promise that resolves when subscribed
  */
 export async function activateChannel(
     channel: RealtimeChannel,
-    onStatusChange?: (status: ChannelStatus) => void
+    onStatusChange?: (status: ChannelStatus) => void,
+    options?: { maxRetries?: number; silent?: boolean }
 ): Promise<void> {
-    return new Promise((resolve, reject) => {
-        channel.subscribe((status) => {
-            onStatusChange?.(status as ChannelStatus)
+    const { maxRetries = REALTIME_CONFIG.maxRetries, silent = false } = options || {}
+    
+    // Throttle connection attempts to avoid spam
+    const now = Date.now()
+    if (now - lastConnectionAttempt < 2000) {
+        await new Promise(resolve => setTimeout(resolve, 2000 - (now - lastConnectionAttempt)))
+    }
+    lastConnectionAttempt = Date.now()
 
-            if (status === 'SUBSCRIBED') {
-                resolve()
-            } else if (status === 'CHANNEL_ERROR' || status === 'TIMED_OUT') {
-                reject(new Error(`Channel subscription failed: ${status}`))
-            }
-        })
+    return new Promise((resolve, reject) => {
+        let retryCount = 0
+        let resolved = false
+
+        const attemptSubscribe = () => {
+            channel.subscribe((status) => {
+                onStatusChange?.(status as ChannelStatus)
+
+                if (resolved) return
+
+                if (status === 'SUBSCRIBED') {
+                    resolved = true
+                    connectionFailureLogged = false // Reset on success
+                    resolve()
+                } else if (status === 'CHANNEL_ERROR' || status === 'TIMED_OUT') {
+                    if (retryCount < maxRetries) {
+                        retryCount++
+                        const delay = REALTIME_CONFIG.baseDelayMs * Math.pow(2, retryCount - 1)
+                        if (REALTIME_CONFIG.debug && !silent) {
+                            console.warn(`[Realtime] Connection failed, retry ${retryCount}/${maxRetries} in ${delay}ms`)
+                        }
+                        setTimeout(attemptSubscribe, delay)
+                    } else {
+                        resolved = true
+                        if (!connectionFailureLogged && !silent) {
+                            console.warn('[Realtime] Connection failed after retries. Check: 1) Supabase Dashboard > Database > Replication (tables enabled), 2) WebSocket not blocked by firewall/proxy, 3) Supabase service status')
+                            connectionFailureLogged = true
+                        }
+                        reject(new Error(`Channel subscription failed: ${status}`))
+                    }
+                }
+            })
+        }
+
+        attemptSubscribe()
     })
 }
 

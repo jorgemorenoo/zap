@@ -3,6 +3,7 @@
 import React from 'react'
 import { Copy, Trash2, Calendar, Play, Pause, Loader2, Users, FolderIcon } from 'lucide-react'
 import { Campaign, CampaignStatus } from '../../../types'
+import { formatDateFull, formatDateTimeFull } from '@/lib/date-formatter'
 import { StatusBadge as DsStatusBadge } from '@/components/ui/status-badge'
 import { Progress } from '@/components/ui/progress'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
@@ -111,10 +112,7 @@ export const CampaignCard = React.memo(
             {campaign.scheduledAt && campaign.status === CampaignStatus.SCHEDULED && (
               <p className="text-xs text-purple-400 mt-1 flex items-center gap-1">
                 <Calendar size={10} />
-                {new Date(campaign.scheduledAt).toLocaleString('pt-BR', {
-                  dateStyle: 'short',
-                  timeStyle: 'short'
-                })}
+                {formatDateTimeFull(campaign.scheduledAt)}
               </p>
             )}
             {/* Tags */}
@@ -150,7 +148,7 @@ export const CampaignCard = React.memo(
         {/* Footer: Date + Actions */}
         <div className="mt-3 pt-3 border-t border-white/5 flex items-center justify-between">
           <span className="text-xs text-gray-500 font-mono">
-            {new Date(campaign.createdAt).toLocaleDateString('pt-BR')}
+            {formatDateFull(campaign.createdAt)}
           </span>
 
           <div className="flex items-center gap-1">

@@ -11,8 +11,12 @@ type InternalCategory = 'MARKETING' | 'UTILIDADE' | 'AUTENTICACAO';
 
 const normalizeCategory = (category: string): InternalCategory => {
     const upperCategory = category.toUpperCase();
+    // Meta API format
     if (upperCategory === 'AUTHENTICATION') return 'AUTENTICACAO';
     if (upperCategory === 'UTILITY') return 'UTILIDADE';
+    // Already canonical format (from canonicalTemplateCategory)
+    if (upperCategory === 'AUTENTICACAO') return 'AUTENTICACAO';
+    if (upperCategory === 'UTILIDADE') return 'UTILIDADE';
     if (upperCategory === 'MARKETING') return 'MARKETING';
     return 'MARKETING'; // Default fallback
 };

@@ -162,7 +162,7 @@ export function useRealtimeNotifications({
 
         // Skip if Supabase not configured
         if (!channel) {
-            console.warn('[useRealtimeNotifications] Supabase not configured, skipping')
+            // Warning is handled centrally in supabase-realtime.ts
             return
         }
 
@@ -175,9 +175,9 @@ export function useRealtimeNotifications({
             })
         })
 
-        // Activate
-        activateChannel(channel).catch((err) => {
-            console.error('[useRealtimeNotifications] Failed to subscribe:', err)
+        // Activate with silent mode to avoid duplicate error logs
+        activateChannel(channel, undefined, { silent: true }).catch(() => {
+            // Errors are logged centrally in supabase-realtime.ts
         })
 
         return () => {

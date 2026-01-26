@@ -426,13 +426,13 @@ export function useCampaignRealtime({
       debouncedRefetch()
     })
 
-    // Activate channel
-    activateChannel(channel)
+    // Activate channel with silent mode to centralize error handling
+    activateChannel(channel, undefined, { silent: true })
       .then(() => {
         setIsActuallyConnected(true)
       })
-      .catch((err) => {
-        console.error('[CampaignRealtime] Failed to connect:', err)
+      .catch(() => {
+        // Errors are logged centrally in supabase-realtime.ts
         setIsActuallyConnected(false)
       })
 

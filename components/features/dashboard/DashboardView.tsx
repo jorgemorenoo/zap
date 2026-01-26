@@ -3,6 +3,7 @@
 import React from 'react';
 import { PrefetchLink } from '@/components/ui/PrefetchLink';
 import { Page, PageActions, PageDescription, PageHeader, PageTitle } from '@/components/ui/page';
+import { formatDateFull } from '@/lib/date-formatter';
 import { Container } from '@/components/ui/container';
 import { StatCard } from '@/components/ui/stat-card';
 import { StatusBadge } from '@/components/ui/status-badge';
@@ -218,7 +219,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ stats, recentCampa
                     <tr key={campaign.id} className="hover:bg-[var(--ds-bg-hover)] transition-all duration-200 group cursor-pointer hover:shadow-[inset_0_0_20px_rgba(16,185,129,0.05)]">
                       <td className="px-6 py-5">
                         <p className="font-medium text-[var(--ds-text-primary)] group-hover:text-primary-600 dark:group-hover:text-primary-400 transition-colors duration-200">{campaign.name}</p>
-                        <p className="text-[var(--ds-text-muted)] text-xs mt-1 font-mono">{new Date(campaign.createdAt).toLocaleDateString('pt-BR')}</p>
+                        <p className="text-[var(--ds-text-muted)] text-xs mt-1 font-mono">{formatDateFull(campaign.createdAt)}</p>
                       </td>
                       <td className="px-6 py-5 text-right">
                         <StatusBadge status={getCampaignBadgeStatus(campaign.status)} size="sm">
