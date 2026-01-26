@@ -68,6 +68,10 @@ async function upsertSetting(key: string, value: string): Promise<void> {
     .upsert({ key, value, updated_at: now }, { onConflict: 'key' })
 
   if (error) {
+    // #region agent log
+    fetch('http://127.0.0.1:7243/ingest/1294d6ce-76f2-430d-96ab-3ae4d7527327',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({sessionId:'debug-session',runId:'pre-fix',hypothesisId:'H2',location:'lib/user-auth.ts:70',message:'upsertSetting error',data:{key,hasError:true,errorMessage:error.message||'unknown'},timestamp:Date.now()})}).catch(()=>{});
+    console.log('[debug][auth] upsertSetting error', { key, errorMessage: error.message || 'unknown' });
+    // #endregion
     // Não silencie erros de permissão/RLS — isso causa loops e estados falsos.
     throw new Error(`Falha ao salvar setting "${key}": ${error.message}`)
   }
@@ -93,6 +97,10 @@ async function getSetting(key: string): Promise<{ value: string; updated_at: str
 async function deleteSetting(key: string): Promise<void> {
   const { error } = await supabase.from('settings').delete().eq('key', key)
   if (error) {
+    // #region agent log
+    fetch('http://127.0.0.1:7243/ingest/1294d6ce-76f2-430d-96ab-3ae4d7527327',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({sessionId:'debug-session',runId:'pre-fix',hypothesisId:'H2',location:'lib/user-auth.ts:95',message:'deleteSetting error',data:{key,hasError:true,errorMessage:error.message||'unknown'},timestamp:Date.now()})}).catch(()=>{});
+    console.log('[debug][auth] deleteSetting error', { key, errorMessage: error.message || 'unknown' });
+    // #endregion
     throw new Error(`Falha ao remover setting "${key}": ${error.message}`)
   }
 }
