@@ -16,6 +16,7 @@ import { inboxDb } from '@/lib/inbox/inbox-db'
 import { processChatAgent, type ContactContext } from '@/lib/ai/agents/chat-agent'
 import { sendWhatsAppMessage, sendTypingIndicator } from '@/lib/whatsapp-send'
 import { getSupabaseAdmin } from '@/lib/supabase'
+import { redis } from '@/lib/redis'
 import type { AIAgent } from '@/types'
 
 // Fluid Compute: 5 minutos de timeout (suficiente para IA)
@@ -30,6 +31,8 @@ export const dynamic = 'force-dynamic'
 
 interface AIRespondRequest {
   conversationId: string
+  /** Timestamp de quando o job foi disparado (para verificação de debounce) */
+  dispatchedAt?: number
 }
 
 // =============================================================================
@@ -45,14 +48,29 @@ export async function POST(req: NextRequest) {
   try {
     // 1. Parse request
     const body = (await req.json()) as AIRespondRequest
-    const { conversationId } = body
+    const { conversationId, dispatchedAt } = body
 
     if (!conversationId) {
       console.log(`❌ [AI-RESPOND] Missing conversationId`)
       return NextResponse.json({ error: 'Missing conversationId' }, { status: 400 })
     }
 
-    console.log(`🤖 [AI-RESPOND] Processing conversation: ${conversationId}`)
+    console.log(`🤖 [AI-RESPOND] Processing conversation: ${conversationId}, dispatchedAt: ${dispatchedAt}`)
+
+    // 1.5. Verificação de debounce - se este job foi superseded por um mais recente
+    if (dispatchedAt && redis) {
+      const redisKey = `ai:debounce:${conversationId}`
+      const lastDispatchTs = await redis.get<number>(redisKey)
+
+      if (lastDispatchTs && lastDispatchTs > dispatchedAt) {
+        console.log(`⏭️ [AI-RESPOND] Skipping - superseded by newer dispatch (${dispatchedAt} < ${lastDispatchTs})`)
+        return NextResponse.json({ skipped: true, reason: 'superseded' })
+      }
+
+      // Este job vai processar - limpa a chave para evitar re-processamento
+      await redis.del(redisKey)
+      console.log(`🤖 [AI-RESPOND] Debounce verified - this job will process`)
+    }
 
     // 2. Busca conversa
     const conversation = await inboxDb.getConversation(conversationId)

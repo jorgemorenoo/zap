@@ -12,9 +12,11 @@ import { inboxDb, isHumanModeExpired, switchToBotMode, findConversationByPhoneLi
 import { cancelDebounce } from '@/lib/ai/agents/chat-agent'
 import { sendWhatsAppMessage } from '@/lib/whatsapp-send'
 import { Client } from '@upstash/qstash'
+import { redis } from '@/lib/redis'
 import type {
   InboxConversation,
   InboxMessage,
+  AIAgent,
 } from '@/types'
 
 // Tipo para conversa lightweight (retorno otimizado do webhook)
@@ -170,23 +172,27 @@ export async function handleInboundMessage(
 }
 
 // =============================================================================
-// AI Processing Trigger (T047) - Via QStash (Simplificado)
+// AI Processing Trigger (T047) - Via QStash com Debounce
 // =============================================================================
 
 /**
- * Trigger AI agent processing via QStash
+ * Trigger AI agent processing via QStash com debounce configurável
  *
- * Versão simplificada: dispara diretamente para /api/ai/respond
- * Sem workflow durável, sem Redis, sem complexidade.
+ * Usa o campo `debounce_ms` do agente para aguardar antes de processar.
+ * Isso evita respostas duplicadas quando o usuário envia múltiplas mensagens rapidamente.
  *
- * O endpoint /api/ai/respond tem maxDuration=300 (5 min) via Fluid Compute,
- * suficiente para processar qualquer resposta de IA.
+ * Fluxo:
+ * 1. Busca agente para pegar debounce_ms configurado
+ * 2. Se debounce > 0: salva timestamp no Redis e agenda QStash com delay
+ * 3. Quando o job executa, verifica se foi superseded por mensagem mais recente
  */
 async function triggerAIProcessing(
   conversation: InboxConversation,
   _message: InboxMessage
 ): Promise<boolean> {
   const conversationId = conversation.id
+  const now = Date.now()
+
   console.log(`🔥 [TRIGGER] Starting AI processing for ${conversationId}`)
 
   const qstash = getQStashClient()
@@ -196,7 +202,45 @@ async function triggerAIProcessing(
     return false
   }
 
-  // URL do endpoint simplificado
+  // 1. Busca o agente para pegar o debounce_ms configurado
+  const agent = await getAgentForTrigger(conversation.ai_agent_id)
+  const debounceMs = agent?.debounce_ms ?? 5000 // default 5s
+  const debounceSeconds = Math.ceil(debounceMs / 1000)
+
+  console.log(`🔥 [TRIGGER] Agent debounce: ${debounceMs}ms (${debounceSeconds}s)`)
+
+  // 2. Se debounce desabilitado (0), dispara imediatamente
+  if (debounceMs === 0) {
+    console.log(`🔥 [TRIGGER] Debounce disabled, dispatching immediately`)
+    return await dispatchToQStash(conversationId, now, 0)
+  }
+
+  // 3. Atualiza timestamp no Redis (estado compartilhado)
+  const redisKey = `ai:debounce:${conversationId}`
+  if (redis) {
+    // Expira a chave alguns segundos após o delay para limpeza automática
+    await redis.set(redisKey, now, { ex: debounceSeconds + 10 })
+    console.log(`🔥 [TRIGGER] Redis SET ${redisKey} = ${now}`)
+  } else {
+    console.log(`⚠️ [TRIGGER] Redis not configured, debounce will be best-effort`)
+  }
+
+  // 4. Dispara QStash com delay configurado
+  return await dispatchToQStash(conversationId, now, debounceSeconds)
+}
+
+/**
+ * Helper: Dispara job para QStash com delay opcional
+ */
+async function dispatchToQStash(
+  conversationId: string,
+  dispatchedAt: number,
+  delaySeconds: number
+): Promise<boolean> {
+  const qstash = getQStashClient()
+  if (!qstash) return false
+
+  // URL do endpoint
   const baseUrl =
     process.env.NEXT_PUBLIC_APP_URL ||
     (process.env.VERCEL_PROJECT_PRODUCTION_URL &&
@@ -206,7 +250,7 @@ async function triggerAIProcessing(
 
   const aiRespondUrl = `${baseUrl}/api/ai/respond`
 
-  console.log(`🔥 [TRIGGER] Dispatching to ${aiRespondUrl}`)
+  console.log(`🔥 [TRIGGER] Dispatching to ${aiRespondUrl} with delay=${delaySeconds}s`)
 
   try {
     // Headers para autenticação e bypass
@@ -229,17 +273,47 @@ async function triggerAIProcessing(
 
     await qstash.publishJSON({
       url: aiRespondUrl,
-      body: { conversationId },
+      body: { conversationId, dispatchedAt },
+      delay: delaySeconds > 0 ? delaySeconds : undefined,
       retries: 2,
       headers,
     })
 
-    console.log(`✅ [TRIGGER] AI processing dispatched for ${conversationId}`)
+    console.log(`✅ [TRIGGER] AI scheduled: debounce=${delaySeconds}s, ts=${dispatchedAt}`)
     return true
   } catch (error) {
     console.error('❌ [TRIGGER] Failed to dispatch AI processing:', error)
     return false
   }
+}
+
+/**
+ * Helper: Busca agente para pegar debounce_ms
+ * Versão leve que só busca os campos necessários
+ */
+async function getAgentForTrigger(agentId: string | null): Promise<Pick<AIAgent, 'debounce_ms'> | null> {
+  const supabase = getSupabaseAdmin()
+  if (!supabase) return null
+
+  // Tenta agente específico
+  if (agentId) {
+    const { data } = await supabase
+      .from('ai_agents')
+      .select('debounce_ms')
+      .eq('id', agentId)
+      .single()
+    if (data) return data
+  }
+
+  // Fallback para agente padrão
+  const { data } = await supabase
+    .from('ai_agents')
+    .select('debounce_ms')
+    .eq('is_active', true)
+    .eq('is_default', true)
+    .single()
+
+  return data || null
 }
 
 /**
