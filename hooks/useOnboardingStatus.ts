@@ -24,6 +24,7 @@ export function useOnboardingStatus() {
         isLoading, 
         isError,
         refetch,
+        isFetching,
     } = useQuery({
         queryKey: ['onboardingStatus'],
         queryFn: async (): Promise<OnboardingStatus> => {
@@ -31,12 +32,15 @@ export function useOnboardingStatus() {
             if (!response.ok) {
                 throw new Error(`HTTP ${response.status}`)
             }
-            return response.json()
+            const data = await response.json()
+            console.log('[useOnboardingStatus] API response:', data)
+            return data
         },
-        staleTime: 5 * 60 * 1000,
+        staleTime: 0, // Sempre busca dados frescos
         gcTime: 10 * 60 * 1000,
-        retry: 3,           // Tenta 3 vezes antes de desistir
-        retryDelay: 1000,   // 1 segundo entre tentativas
+        retry: 3,
+        retryDelay: 1000,
+        refetchOnMount: 'always', // Sempre refetch ao montar
     })
     
     // Marca como completo no banco
@@ -60,6 +64,15 @@ export function useOnboardingStatus() {
     // 2. API falhou → assume completo (não incomoda)
     // 3. Banco diz FALSE → não completo
     const isCompleted = dbStatus?.onboardingCompleted === true || isError
+    
+    // Debug log
+    console.log('[useOnboardingStatus] State:', { 
+        dbStatus, 
+        isLoading, 
+        isFetching,
+        isError, 
+        isCompleted 
+    })
     
     return {
         /** Se o onboarding foi completado (DB = true OU erro na API) */
